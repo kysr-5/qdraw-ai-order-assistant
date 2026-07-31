@@ -67,13 +67,16 @@ const fromJson = (value, fallback) => {
 
 function hydrateBrief(row) {
   if (!row) return null;
-  return {
+  const brief = {
     ...row,
     analysis: fromJson(row.analysis_json, {}),
     brief: fromJson(row.brief_json, {}),
     analysis_json: undefined,
     brief_json: undefined,
   };
+  brief.profile_suggestions = db.prepare("SELECT * FROM profile_suggestions WHERE brief_id = ? ORDER BY created_at ASC").all(row.id).map(hydrateSuggestion);
+  brief.profile_updates = db.prepare("SELECT * FROM profile_items WHERE source_brief_id = ? ORDER BY last_seen_at ASC").all(row.id).map(hydrateProfileItem);
+  return brief;
 }
 
 function hydrateProfileItem(row) {
@@ -176,17 +179,19 @@ export function confirmBrief(id) {
   return getBrief(id);
 }
 
-export function acceptSuggestion(id, overrideContent) {
+export function acceptSuggestion(id, override = {}) {
   const suggestion = db.prepare("SELECT * FROM profile_suggestions WHERE id = ?").get(id);
   if (!suggestion || suggestion.status !== "pending") return null;
   const timestamp = now();
-  const content = overrideContent?.trim() || suggestion.content;
+  const content = override.content?.trim() || suggestion.content;
+  const type = override.type?.trim() || suggestion.type;
+  const confidence = Math.min(0.95, Math.max(0.1, Number(override.confidence) || suggestion.confidence));
   const duplicate = db.prepare(`SELECT id FROM profile_items WHERE merchant_id = ? AND content = ? AND status = 'active'`).get(suggestion.merchant_id, content);
   if (duplicate) {
-    db.prepare("UPDATE profile_items SET last_seen_at = ?, confidence = MAX(confidence, ?) WHERE id = ?").run(timestamp, suggestion.confidence, duplicate.id);
+    db.prepare("UPDATE profile_items SET last_seen_at = ?, confidence = MAX(confidence, ?) WHERE id = ?").run(timestamp, confidence, duplicate.id);
   } else {
     db.prepare(`INSERT INTO profile_items (id, merchant_id, type, content, evidence, source_brief_id, confidence, first_seen_at, last_seen_at, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`)
-      .run(randomUUID(), suggestion.merchant_id, suggestion.type, content, suggestion.evidence, suggestion.brief_id, suggestion.confidence, timestamp, timestamp);
+      .run(randomUUID(), suggestion.merchant_id, type, content, suggestion.evidence, suggestion.brief_id, confidence, timestamp, timestamp);
   }
   db.prepare("UPDATE profile_suggestions SET status = 'accepted', resolved_at = ? WHERE id = ?").run(timestamp, id);
   return getMerchant(suggestion.merchant_id);
@@ -197,6 +202,13 @@ export function ignoreSuggestion(id) {
   if (!suggestion || suggestion.status !== "pending") return null;
   db.prepare("UPDATE profile_suggestions SET status = 'ignored', resolved_at = ? WHERE id = ?").run(now(), id);
   return getMerchant(suggestion.merchant_id);
+}
+
+export function deleteBriefRawSource(id) {
+  const brief = getBrief(id);
+  if (!brief) return null;
+  db.prepare("UPDATE project_briefs SET chat_text = '', updated_at = ? WHERE id = ?").run(now(), id);
+  return getBrief(id);
 }
 
 export function getAnalysisContext(merchantId) {

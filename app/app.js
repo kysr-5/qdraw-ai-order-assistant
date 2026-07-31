@@ -1,4 +1,4 @@
-const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "workspace", lastAnalysisInput: null };
+const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "workspace", lastAnalysisInput: null, editingSuggestionId: null };
 
 const elements = {
   merchantList: document.querySelector("#merchantList"), merchantTitle: document.querySelector("#merchantTitle"), workspace: document.querySelector("#workspace"), emptyState: document.querySelector("#emptyState"), merchantView: document.querySelector("#merchantView"), merchantViewTitle: document.querySelector("#merchantViewTitle"),
@@ -66,6 +66,7 @@ function renderAnalysis() {
   setAnalysisStatus(analysis.analysis_mode === "demo" ? "演示回退" : "AI 已生成", "ready");
   elements.analysisContent.innerHTML = `
     ${analysis.analysis_mode === "demo" ? `<div class="inline-error">未配置 AI 服务，当前显示的是本地演示分析。请在 .env 中配置 AI_API_KEY 和 AI_MODEL。</div>` : ""}
+    <div class="analysis-group"><div class="analysis-group-title">项目标题</div><div class="analysis-text">${escapeHtml(analysis.project_title || "待画师命名")}</div></div>
     <div class="analysis-group"><div class="analysis-group-title">一句话摘要</div><div class="analysis-text">${escapeHtml(analysis.summary)}</div></div>
     <div class="analysis-group"><div class="analysis-group-title">关键词</div>${tags(analysis.keywords)}</div>
     <div class="analysis-group"><div class="analysis-group-title">商家明确要求</div>${tags(analysis.explicit_requirements)}</div>
@@ -100,7 +101,15 @@ function renderProfile() {
   const suggestions = merchant.profile_suggestions || [];
   if (!suggestions.length) { elements.profileSuggestion.classList.add("hidden"); return; }
   elements.profileSuggestion.classList.remove("hidden");
-  elements.profileSuggestion.innerHTML = `<p>画像更新建议</p>${suggestions.map((item) => `<div class="suggestion-row"><div class="suggestion-type">${profileLabel(item.type)} · ${Math.round(item.confidence * 100)}%</div><div>${escapeHtml(item.content)}</div><div class="suggestion-evidence">${escapeHtml(item.evidence || "缺少来源证据")}</div><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" data-suggestion-id="${item.id}" type="button">采纳</button><button class="small-button" data-profile-action="ignore" data-suggestion-id="${item.id}" type="button">忽略</button></div></div>`).join("")}`;
+  elements.profileSuggestion.innerHTML = `<p>画像更新建议</p>${suggestions.map((item) => {
+    const editing = state.editingSuggestionId === item.id;
+    return `<div class="suggestion-row">${editing ? suggestionEditor(item) : `<div class="suggestion-type">${profileLabel(item.type)} · ${Math.round(item.confidence * 100)}%</div><div>${escapeHtml(item.content)}</div><div class="suggestion-evidence">${escapeHtml(item.evidence || "缺少来源证据")}</div><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" data-suggestion-id="${item.id}" type="button">采纳</button><button class="small-button" data-profile-action="edit" data-suggestion-id="${item.id}" type="button">编辑后采纳</button><button class="small-button" data-profile-action="ignore" data-suggestion-id="${item.id}" type="button">忽略</button></div>`}</div>`;
+  }).join("")}`;
+}
+
+function suggestionEditor(item) {
+  const types = [["new_preference", "新增偏好"], ["reinforced_preference", "强化偏好"], ["possible_change", "可能变化"], ["one_off_requirement", "单次需求"], ["communication_note", "沟通习惯"], ["avoidance", "避雷项"]];
+  return `<div class="suggestion-editor" data-suggestion-editor="${item.id}"><textarea data-suggestion-field="content">${escapeHtml(item.content)}</textarea><select data-suggestion-field="type">${types.map(([value, label]) => `<option value="${value}"${item.type === value ? " selected" : ""}>${label}</option>`).join("")}</select><input data-suggestion-field="confidence" type="number" min="10" max="95" value="${Math.round(item.confidence * 100)}" title="置信度百分比" /><div class="suggestion-evidence">${escapeHtml(item.evidence || "缺少来源证据")}</div><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" data-suggestion-id="${item.id}" type="button">确认采纳</button><button class="small-button" data-profile-action="cancel-edit" data-suggestion-id="${item.id}" type="button">取消</button></div></div>`;
 }
 
 function historyButton(brief) { return `<button class="history-item" data-brief-id="${brief.id}" type="button"><div class="history-title">${escapeHtml(brief.title)}</div><div class="history-date">${new Date(brief.confirmed_at || brief.updated_at).toLocaleDateString("zh-CN")} · 已确认</div></button>`; }
@@ -130,8 +139,11 @@ function render() {
 function updateChatInput() {
   const chat = elements.chatInput.value;
   elements.chatCount.textContent = `${chat.trim().length} 字`;
-  elements.inputHint.classList.toggle("hidden", chat.trim().length >= 20 || !chat.trim());
-  elements.inputHint.textContent = "聊天内容较短，分析结果可能不完整。";
+  const notices = [];
+  if (chat.trim().length && chat.trim().length < 20) notices.push("聊天内容较短，分析结果可能不完整。");
+  if (/1[3-9]\d{9}|[\w.+-]+@[\w-]+\.[\w.-]+|微信[号號]|地址|收货|报价|银行卡/.test(chat)) notices.push("检测到可能含有敏感信息。分析后可在历史任务中删除原始聊天。 ");
+  elements.inputHint.classList.toggle("hidden", !notices.length);
+  elements.inputHint.textContent = notices.join(" ");
   elements.analyzeButton.disabled = !chat.trim();
   if (state.activeMerchant) sessionStorage.setItem(draftKey(state.activeMerchant.id), JSON.stringify(currentInput()));
   if (!state.activeBrief) renderAnalysis();
@@ -222,9 +234,17 @@ async function confirmBrief() {
 async function resolveSuggestion(event) {
   const button = event.target.closest("[data-profile-action]");
   if (!button) return;
+  if (button.dataset.profileAction === "edit") { state.editingSuggestionId = button.dataset.suggestionId; renderProfile(); return; }
+  if (button.dataset.profileAction === "cancel-edit") { state.editingSuggestionId = null; renderProfile(); return; }
   try {
-    const { merchant } = await api(`/api/profile-suggestions/${button.dataset.suggestionId}/${button.dataset.profileAction}`, { method: "POST", body: "{}" });
+    let payload = {};
+    if (button.dataset.profileAction === "accept") {
+      const editor = elements.profileSuggestion.querySelector(`[data-suggestion-editor="${button.dataset.suggestionId}"]`);
+      if (editor) payload = { content: editor.querySelector('[data-suggestion-field="content"]').value, type: editor.querySelector('[data-suggestion-field="type"]').value, confidence: Number(editor.querySelector('[data-suggestion-field="confidence"]').value) / 100 };
+    }
+    const { merchant } = await api(`/api/profile-suggestions/${button.dataset.suggestionId}/${button.dataset.profileAction}`, { method: "POST", body: JSON.stringify(payload) });
     state.activeMerchant = merchant;
+    state.editingSuggestionId = null;
     state.merchants = state.merchants.map((item) => item.id === merchant.id ? { ...item, profile_count: merchant.profile_items.length } : item);
     render();
     showToast(button.dataset.profileAction === "accept" ? "画像建议已采纳" : "画像建议已忽略");
@@ -235,8 +255,27 @@ async function openBrief(id) {
   try {
     const { brief } = await api(`/api/briefs/${id}`);
     elements.briefDialogTitle.textContent = brief.title;
-    elements.briefDialogContent.textContent = asMarkdown(brief.brief, state.activeMerchant);
+    const briefFields = Object.entries(fieldLabels).filter(([key]) => key !== "title" && brief.brief[key]).map(([key, label]) => `<div class="detail-pair"><strong>${label}</strong><span>${escapeHtml(brief.brief[key])}</span></div>`).join("") || `<p>任务书字段尚未补充。</p>`;
+    const analysis = brief.analysis || {};
+    const profileUpdates = brief.profile_updates || [];
+    const suggestions = brief.profile_suggestions || [];
+    const rawSource = brief.chat_text ? `<div class="raw-chat">${escapeHtml(brief.chat_text)}</div><div class="privacy-row"><span>原始聊天已保存，可能含有商家隐私信息。</span><button class="danger-button" data-delete-raw-source="${brief.id}" type="button">删除原始聊天</button></div>` : `<div class="privacy-row"><span>原始聊天已删除，任务书与画像记录仍保留。</span></div>`;
+    elements.briefDialogContent.innerHTML = `
+      <section class="detail-section"><h3>最终任务书</h3><div class="detail-grid">${briefFields}</div></section>
+      <section class="detail-section"><h3>需求分析</h3><p>${escapeHtml(analysis.summary || "未保存分析摘要")}</p><div class="tag-row">${(analysis.explicit_requirements || []).map((item) => `<span class="tag">${escapeHtml(item)}</span>`).join("")}</div></section>
+      <section class="detail-section"><h3>画像更新记录</h3><p>${profileUpdates.length ? profileUpdates.map((item) => `${profileLabel(item.type)}：${item.content}`).join("；") : "未采纳画像建议。"}</p><p class="profile-meta">本次生成 ${suggestions.length} 条建议，已采纳 ${profileUpdates.length} 条。</p></section>
+      <section class="detail-section"><h3>原始聊天</h3>${rawSource}</section>`;
     elements.briefDialog.showModal();
+  } catch (error) { showToast(error.message); }
+}
+
+async function deleteRawSource(id) {
+  if (!window.confirm("删除后不能恢复原始聊天，但任务书和画像记录会保留。确定删除吗？")) return;
+  try {
+    const { brief } = await api(`/api/briefs/${id}/raw-source`, { method: "DELETE" });
+    elements.briefDialog.close();
+    await openBrief(brief.id);
+    showToast("原始聊天已删除");
   } catch (error) { showToast(error.message); }
 }
 
@@ -321,6 +360,7 @@ elements.merchantList.addEventListener("click", (event) => { const button = even
 elements.profileSuggestion.addEventListener("click", resolveSuggestion);
 elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
 elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
+elements.briefDialog.addEventListener("click", (event) => { const button = event.target.closest("[data-delete-raw-source]"); if (button) deleteRawSource(button.dataset.deleteRawSource); });
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
 
 init();

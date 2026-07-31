@@ -5,7 +5,7 @@ import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 import { analyzeRequest, analysisToBrief, toStoredSuggestions } from "./analysis.js";
-import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createMerchant, deleteMerchant, getAnalysisContext, getBrief, getMerchant, ignoreSuggestion, listMerchants, seedDemoData, updateBrief, updateMerchant } from "./storage.js";
+import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createMerchant, deleteBriefRawSource, deleteMerchant, getAnalysisContext, getBrief, getMerchant, ignoreSuggestion, listMerchants, seedDemoData, updateBrief, updateMerchant } from "./storage.js";
 
 const rootDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 const appDirectory = join(rootDirectory, "app");
@@ -68,6 +68,11 @@ async function handleApi(request, response, pathname) {
     return sendJson(response, 201, { brief: stored, analysis_mode: result.mode });
   }
   const briefMatch = pathname.match(/^\/api\/briefs\/([^/]+)(?:\/(confirm))?$/);
+  const rawSourceMatch = pathname.match(/^\/api\/briefs\/([^/]+)\/raw-source$/);
+  if (rawSourceMatch && method === "DELETE") {
+    const brief = deleteBriefRawSource(decodeURIComponent(rawSourceMatch[1]));
+    return brief ? sendJson(response, 200, { brief }) : notFound(response);
+  }
   if (briefMatch) {
     const id = decodeURIComponent(briefMatch[1]);
     if (method === "GET") {
@@ -86,7 +91,7 @@ async function handleApi(request, response, pathname) {
   const suggestionMatch = pathname.match(/^\/api\/profile-suggestions\/([^/]+)\/(accept|ignore)$/);
   if (suggestionMatch && method === "POST") {
     const input = await readJson(request);
-    const merchant = suggestionMatch[2] === "accept" ? acceptSuggestion(suggestionMatch[1], input.content) : ignoreSuggestion(suggestionMatch[1]);
+    const merchant = suggestionMatch[2] === "accept" ? acceptSuggestion(suggestionMatch[1], input) : ignoreSuggestion(suggestionMatch[1]);
     return merchant ? sendJson(response, 200, { merchant }) : notFound(response);
   }
   return notFound(response);

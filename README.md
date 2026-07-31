@@ -12,10 +12,20 @@ npm start
 
 默认处于明确标识的“演示 AI 模式”。若要接入真实模型服务，将 [`.env.example`](./.env.example) 复制为 `.env`，再填写：
 
+DeepSeek 和阿里云百炼都可以直接使用，二选一即可：
+
 ```text
-AI_API_URL=https://api.openai.com/v1/chat/completions
-AI_API_KEY=你的服务密钥
-AI_MODEL=你的模型名称
+# DeepSeek
+AI_API_URL=https://api.deepseek.com/chat/completions
+AI_API_KEY=你的 DeepSeek API Key
+AI_MODEL=deepseek-v4-flash
+```
+
+```text
+# 阿里云百炼，将 {WorkspaceId} 换为业务空间 ID
+AI_API_URL=https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+AI_API_KEY=你的百炼 API Key
+AI_MODEL=qwen-plus
 ```
 
 后端会统一调用模型、要求 JSON 输出并规范化结果；前端不会接触密钥。

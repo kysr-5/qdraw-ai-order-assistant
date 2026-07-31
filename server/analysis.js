@@ -1,4 +1,5 @@
 const schemaDescription = `{
+  "project_title": "string",
   "summary": "string",
   "keywords": ["string"],
   "explicit_requirements": ["string"],
@@ -34,6 +35,7 @@ export function normalizeAnalysis(raw = {}) {
   const style = raw.style_direction || {};
   const history = raw.history_comparison || {};
   return {
+    project_title: toString(raw.project_title),
     summary: toString(raw.summary),
     keywords: toArray(raw.keywords),
     explicit_requirements: toArray(raw.explicit_requirements),
@@ -56,7 +58,7 @@ export function analysisToBrief(analysis, input) {
   const subject = analysis.main_subject;
   const style = analysis.style_direction;
   return {
-    title: analysis.drawing_goal || "未命名作画任务",
+    title: analysis.project_title || analysis.drawing_goal || "未命名作画任务",
     goal: analysis.drawing_goal,
     usage_scene: analysis.usage_scene,
     theme: analysis.summary,
@@ -75,15 +77,29 @@ export function analysisToBrief(analysis, input) {
 
 function contains(chat, words) { return words.some((word) => chat.includes(word)); }
 
+function findMentionedSubjects(chat) {
+  const knownSubjects = ["小女孩", "小男孩", "店主", "柴犬", "小熊", "小猫", "小狗", "兔子", "草莓蛋糕", "蛋糕", "咖啡", "茶饮", "花束", "花艺"];
+  const matches = knownSubjects.filter((subject) => chat.includes(subject));
+  return matches.filter((subject) => !matches.some((other) => other !== subject && other.includes(subject)));
+}
+
+function demoProjectTitle(chat, subjects) {
+  const occasion = ["春节", "元宵", "情人节", "七夕", "中秋", "国庆", "圣诞", "周年庆", "夏日", "夏天"].find((item) => chat.includes(item));
+  const usage = ["海报", "菜单", "包装", "头像", "插画"].find((item) => chat.includes(item));
+  const keySubject = subjects.find((item) => !["店主", "花束"].includes(item));
+  return [occasion, keySubject, usage].filter(Boolean).join("") || [keySubject, usage].filter(Boolean).join("") || "商家插画需求";
+}
+
 export function createDemoAnalysis(input, context) {
   const chat = input.chat_text;
+  const subjects = findMentionedSubjects(chat);
   const explicit = [];
   const inferred = [];
   const questions = [];
   if (contains(chat, ["海报", "小红书", "朋友圈", "宣传"])) explicit.push("用于社交媒体传播的活动视觉");
   if (contains(chat, ["竖版", "1080", "1440"])) explicit.push("竖版发布尺寸");
-  if (contains(chat, ["店主", "人物"])) explicit.push("画面需包含店主角色");
-  if (contains(chat, ["柴犬", "狗狗", "宠物"])) explicit.push("画面需包含宠物角色");
+  if (contains(chat, ["店主", "人物"])) explicit.push("画面需包含店主或人物角色");
+  if (subjects.length) explicit.push(`画面主体包含：${subjects.join("、")}`);
   if (contains(chat, ["可爱", "手绘"])) explicit.push("可爱手绘风格");
   if (contains(chat, ["明快", "夏天", "夏日"])) explicit.push("明快、有季节感的配色");
   if (contains(chat, ["写实", "不太适合"])) explicit.push("避免强写实质感");
@@ -97,13 +113,14 @@ export function createDemoAnalysis(input, context) {
   const profileContents = context.profile_items.map((item) => item.content);
   const consistent = profileContents.filter((item) => (item.includes("手绘") && contains(chat, ["手绘", "可爱"])) || (item.includes("写实") && contains(chat, ["写实"])));
   const analysis = normalizeAnalysis({
+    project_title: demoProjectTitle(chat, subjects),
     summary: "将本次聊天整理为可执行的社交媒体活动插画任务。",
     keywords: ["活动视觉", "社交媒体", ...explicit.slice(0, 4)],
     explicit_requirements: explicit,
     inferred_requirements: inferred,
     drawing_goal: contains(chat, ["周年", "活动"]) ? "制作适合社交媒体发布的活动主视觉插画" : "根据商家聊天制作可执行的插画任务",
     usage_scene: contains(chat, ["小红书", "朋友圈"]) ? "小红书、朋友圈等移动端社交媒体" : "待确认发布渠道",
-    main_subject: { type: contains(chat, ["店主", "人物"]) ? "人物与宠物" : "待确认", count: contains(chat, ["柴犬", "狗狗"]) ? "店主 1 人、宠物 1 只" : "待确认", identity: contains(chat, ["店主"]) ? "店主" : "待确认", action: contains(chat, ["花束"]) ? "手持花束，与宠物同框" : "待确认", expression: "自然亲切", props: contains(chat, ["花束"]) ? ["花束"] : [], background: contains(chat, ["咖啡", "店铺"]) ? ["店铺门口或咖啡店环境"] : [] },
+    main_subject: { type: subjects.length ? subjects.join("、") : (contains(chat, ["人物", "角色"]) ? "人物角色" : "待确认"), count: subjects.length > 1 ? `${subjects.length} 个主要主体` : (subjects.length ? "1 个主要主体" : "待确认"), identity: subjects.filter((item) => ["店主", "小女孩", "小男孩"].includes(item)).join("、") || "待确认", action: contains(chat, ["花束"]) ? "手持花束，与画面主体同框" : "待确认", expression: "自然亲切", props: subjects.filter((item) => ["花束", "草莓蛋糕", "蛋糕", "咖啡", "茶饮"].includes(item)), background: contains(chat, ["咖啡", "店铺"]) ? ["店铺门口或咖啡店环境"] : [] },
     style_direction: { art_style: contains(chat, ["可爱", "手绘"]) ? "可爱手绘" : "待确认", line_quality: "轻松、干净", color: contains(chat, ["明快", "夏天", "夏日"]) ? "明快而不过分繁杂的夏日色彩" : "待确认", mood_keywords: ["亲切", "轻松"], reference_style: "", disliked_style: contains(chat, ["写实"]) ? "强写实质感" : "" },
     must_have: explicit,
     flexible_space: inferred,
