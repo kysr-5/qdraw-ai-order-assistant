@@ -1,8 +1,24 @@
 # Qdraw AI 接单助手
 
-首版可运行工作台位于 [`app/index.html`](./app/index.html)。直接在浏览器打开即可体验：选择商家、粘贴聊天、生成可编辑任务书，并确认画像更新建议。
+## 运行产品
 
-当前版本使用本地规则模拟需求提取，数据保存于浏览器本地存储；真实 AI 服务与后端接口将在下一阶段接入。
+此版本已升级为带 SQLite 持久化的本地服务。启动后访问 `http://localhost:3000`：
+
+```powershell
+npm start
+```
+
+数据会保存到本机的 `data/qdraw.db`。商家、完整任务书、画像条目与画像建议均通过后端接口读写，刷新页面不会丢失。
+
+默认处于明确标识的“演示 AI 模式”。若要接入真实模型服务，将 [`.env.example`](./.env.example) 复制为 `.env`，再填写：
+
+```text
+AI_API_URL=https://api.openai.com/v1/chat/completions
+AI_API_KEY=你的服务密钥
+AI_MODEL=你的模型名称
+```
+
+后端会统一调用模型、要求 JSON 输出并规范化结果；前端不会接触密钥。
 
 ## 项目文档索引
 

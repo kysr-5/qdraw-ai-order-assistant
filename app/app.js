@@ -1,349 +1,326 @@
-const storageKey = "qdraw-workspace-v1";
-
-const demoChat = `商家：我们八月要做周年庆活动，想请你画一张可以发小红书和朋友圈的海报。\n画师：大概想要什么内容和感觉？\n商家：店主和我们家的柴犬一起在咖啡店门口，店主拿着一束花，狗狗坐在旁边就好。希望有一点夏天的感觉，颜色明快，但是不要太花。\n商家：人物希望偏可爱手绘，之前那种写实感不太适合我们。文字位置先留出来，周年庆和日期后面我们自己排。\n画师：尺寸和交付时间呢？\n商家：竖版，1080 x 1440，最好下周三前能看到初稿。`;
-
-const defaultData = {
-  activeMerchantId: "m-flower",
-  merchants: [
-    {
-      id: "m-flower",
-      name: "花田咖啡",
-      note: "小红书店铺，合作过 2 次",
-      profile: {
-        preferences: ["偏好可爱手绘与明快配色", "需要为文字和活动日期保留排版空间", "不喜欢过强的写实质感"],
-        communication: "确认尺寸、主角关系和交付节点后再进入绘制。",
-      },
-      briefs: [
-        { id: "b-001", title: "夏日新品饮品插画", date: "2026-07-12", state: "已确认" },
-        { id: "b-002", title: "店铺菜单角标", date: "2026-07-22", state: "已确认" },
-      ],
-      draft: { chat: demoChat, analysis: null, brief: {}, suggestion: null, state: "草稿" },
-    },
-    {
-      id: "m-sen",
-      name: "森屿花艺",
-      note: "节日海报为主",
-      profile: { preferences: ["偏好留白较多的画面", "常用自然植物元素"], communication: "修改意见通常集中在配色和花材。" },
-      briefs: [{ id: "b-003", title: "七夕花礼海报", date: "2026-07-24", state: "已确认" }],
-      draft: { chat: "", analysis: null, brief: {}, suggestion: null, state: "草稿" },
-    },
-  ],
-};
-
-let data = loadData();
+const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "workspace", lastAnalysisInput: null };
 
 const elements = {
-  merchantList: document.querySelector("#merchantList"),
-  merchantTitle: document.querySelector("#merchantTitle"),
-  workspace: document.querySelector("#workspace"),
-  emptyState: document.querySelector("#emptyState"),
-  chatInput: document.querySelector("#chatInput"),
-  chatCount: document.querySelector("#chatCount"),
-  chatState: document.querySelector("#chatState"),
-  analysisState: document.querySelector("#analysisState"),
-  analysisContent: document.querySelector("#analysisContent"),
-  briefState: document.querySelector("#briefState"),
-  profileContent: document.querySelector("#profileContent"),
-  profileConfidence: document.querySelector("#profileConfidence"),
-  profileSuggestion: document.querySelector("#profileSuggestion"),
-  merchantDialog: document.querySelector("#merchantDialog"),
-  merchantForm: document.querySelector("#merchantForm"),
-  merchantNameInput: document.querySelector("#merchantNameInput"),
-  merchantNoteInput: document.querySelector("#merchantNoteInput"),
+  merchantList: document.querySelector("#merchantList"), merchantTitle: document.querySelector("#merchantTitle"), workspace: document.querySelector("#workspace"), emptyState: document.querySelector("#emptyState"), merchantView: document.querySelector("#merchantView"), merchantViewTitle: document.querySelector("#merchantViewTitle"),
+  chatInput: document.querySelector("#chatInput"), artistNote: document.querySelector("#artistNote"), sourceType: document.querySelector("#sourceType"), useProfile: document.querySelector("#useProfile"), chatCount: document.querySelector("#chatCount"), chatState: document.querySelector("#chatState"), inputHint: document.querySelector("#inputHint"), analyzeButton: document.querySelector("#analyzeButton"),
+  analysisState: document.querySelector("#analysisState"), analysisContent: document.querySelector("#analysisContent"), analysisError: document.querySelector("#analysisError"), analysisErrorText: document.querySelector("#analysisErrorText"), retryButton: document.querySelector("#retryButton"),
+  briefState: document.querySelector("#briefState"), profileContent: document.querySelector("#profileContent"), profileConfidence: document.querySelector("#profileConfidence"), profileSuggestion: document.querySelector("#profileSuggestion"),
+  merchantDialog: document.querySelector("#merchantDialog"), merchantForm: document.querySelector("#merchantForm"), merchantNameInput: document.querySelector("#merchantNameInput"), merchantIndustryInput: document.querySelector("#merchantIndustryInput"), merchantNoteInput: document.querySelector("#merchantNoteInput"), merchantKeywordsInput: document.querySelector("#merchantKeywordsInput"),
+  merchantDetailForm: document.querySelector("#merchantDetailForm"), detailName: document.querySelector("#detailMerchantName"), detailIndustry: document.querySelector("#detailMerchantIndustry"), detailNote: document.querySelector("#detailMerchantNote"), detailKeywords: document.querySelector("#detailMerchantKeywords"), merchantHistory: document.querySelector("#merchantHistory"),
+  briefDialog: document.querySelector("#briefDialog"), briefDialogTitle: document.querySelector("#briefDialogTitle"), briefDialogContent: document.querySelector("#briefDialogContent"), toast: document.querySelector("#toast"), backendState: document.querySelector("#backendState"), backendDot: document.querySelector("#backendDot"),
 };
 
-function loadData() {
-  try {
-    return JSON.parse(localStorage.getItem(storageKey)) || structuredClone(defaultData);
-  } catch {
-    return structuredClone(defaultData);
-  }
+const fieldLabels = {
+  title: "项目名称", goal: "本次作画目的", usage_scene: "使用场景", theme: "画面主题", subject: "主体与形象设定", style: "风格方向", colors: "色彩氛围", composition: "构图建议", must_have: "必须包含", flexible: "可发挥项", avoid: "避免出现", references: "参考信息", questions: "待确认问题", artist_note: "画师备注",
+};
+
+function escapeHtml(value = "") { return String(value).replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]); }
+function draftKey(merchantId) { return `qdraw-input-${merchantId}`; }
+function currentInput() { return { chat_text: elements.chatInput.value, artist_note: elements.artistNote.value, source_type: elements.sourceType.value, use_merchant_profile: elements.useProfile.checked }; }
+
+async function api(path, options = {}) {
+  const response = await fetch(path, { headers: { "Content-Type": "application/json; charset=utf-8", ...(options.headers || {}) }, ...options });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(body.error || "请求失败，请稍后重试");
+  return body;
 }
 
-function saveData() {
-  localStorage.setItem(storageKey, JSON.stringify(data));
+function showToast(message) {
+  elements.toast.textContent = message;
+  elements.toast.classList.remove("hidden");
+  clearTimeout(showToast.timer);
+  showToast.timer = setTimeout(() => elements.toast.classList.add("hidden"), 2400);
 }
 
-function activeMerchant() {
-  return data.merchants.find((merchant) => merchant.id === data.activeMerchantId);
+function setAnalysisStatus(text, kind = "") {
+  elements.analysisState.textContent = text;
+  elements.analysisState.className = `analysis-state ${kind}`.trim();
 }
 
-function escapeHtml(value = "") {
-  return value.replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
-}
-
-function makeTags(items, inferred = false) {
-  return items.map((item) => `<span class="tag${inferred ? " inferred" : ""}">${escapeHtml(item)}</span>`).join("");
+function setBusy(busy) {
+  elements.analyzeButton.disabled = busy || !elements.chatInput.value.trim();
+  elements.analyzeButton.textContent = busy ? "分析中..." : "开始分析";
+  elements.retryButton.disabled = busy;
 }
 
 function renderMerchantList() {
-  elements.merchantList.innerHTML = data.merchants.map((merchant) => {
-    const active = merchant.id === data.activeMerchantId ? " active" : "";
-    const initial = merchant.name.slice(0, 1);
-    return `<button type="button" class="merchant-item${active}" data-merchant-id="${merchant.id}">
-      <span class="merchant-avatar">${escapeHtml(initial)}</span>
-      <span><span class="merchant-name">${escapeHtml(merchant.name)}</span><span class="merchant-meta">${merchant.briefs.length} 个已确认任务</span></span>
-    </button>`;
+  elements.merchantList.innerHTML = state.merchants.map((merchant) => {
+    const active = merchant.id === state.activeMerchant?.id ? " active" : "";
+    return `<button type="button" class="merchant-item${active}" data-merchant-id="${merchant.id}"><span class="merchant-avatar">${escapeHtml(merchant.name.slice(0, 1))}</span><span><span class="merchant-name">${escapeHtml(merchant.name)}</span><span class="merchant-meta">${merchant.brief_count} 个已确认任务</span></span></button>`;
   }).join("");
 }
 
-function renderAnalysis(draft) {
-  const analysis = draft.analysis;
-  if (!analysis) {
-    elements.analysisState.textContent = draft.chat.trim() ? "可开始分析" : "等待聊天内容";
-    elements.analysisState.classList.remove("ready");
-    elements.analysisContent.innerHTML = `<div class="analysis-placeholder">${draft.chat.trim() ? "点击“开始分析”提取作画需求。" : "粘贴聊天后，需求要点会显示在这里。"}</div>`;
+function renderAnalysis() {
+  const analysis = state.activeBrief?.analysis;
+  elements.analysisError.classList.add("hidden");
+  if (!analysis?.summary) {
+    setAnalysisStatus(elements.chatInput.value.trim() ? "可开始分析" : "等待聊天内容");
+    elements.analysisContent.innerHTML = `<div class="analysis-placeholder">${elements.chatInput.value.trim() ? "点击“开始分析”提取作画需求。" : "粘贴聊天后，需求要点会显示在这里。"}</div>`;
     return;
   }
-  elements.analysisState.textContent = "已生成";
-  elements.analysisState.classList.add("ready");
+  const tags = (items, inferred = false) => items.length ? `<div class="tag-row">${items.map((item) => `<span class="tag${inferred ? " inferred" : ""}">${escapeHtml(item)}</span>`).join("")}</div>` : `<div class="analysis-text">未提取到</div>`;
+  const history = analysis.history_comparison || {};
+  const historyRows = [
+    ["与历史一致", history.consistent_preferences], ["本次新增", history.new_requirements], ["可能冲突", history.possible_conflicts], ["接单建议", history.artist_suggestions],
+  ].filter(([, items]) => items?.length).map(([label, items]) => `<div class="analysis-group"><div class="analysis-group-title">${label}</div>${tags(items, label === "可能冲突")}</div>`).join("");
+  setAnalysisStatus(analysis.analysis_mode === "demo" ? "演示回退" : "AI 已生成", "ready");
   elements.analysisContent.innerHTML = `
+    ${analysis.analysis_mode === "demo" ? `<div class="inline-error">未配置 AI 服务，当前显示的是本地演示分析。请在 .env 中配置 AI_API_KEY 和 AI_MODEL。</div>` : ""}
     <div class="analysis-group"><div class="analysis-group-title">一句话摘要</div><div class="analysis-text">${escapeHtml(analysis.summary)}</div></div>
-    <div class="analysis-group"><div class="analysis-group-title">商家明确要求</div><div class="tag-row">${makeTags(analysis.explicit)}</div></div>
-    <div class="analysis-group"><div class="analysis-group-title">系统推断</div><div class="tag-row">${makeTags(analysis.inferred, true)}</div></div>
-    <div class="analysis-group"><div class="analysis-group-title">待确认</div><ol class="question-list">${analysis.questions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ol></div>`;
+    <div class="analysis-group"><div class="analysis-group-title">关键词</div>${tags(analysis.keywords)}</div>
+    <div class="analysis-group"><div class="analysis-group-title">商家明确要求</div>${tags(analysis.explicit_requirements)}</div>
+    <div class="analysis-group"><div class="analysis-group-title">系统推断</div>${tags(analysis.inferred_requirements, true)}</div>
+    <div class="analysis-group"><div class="analysis-group-title">待确认</div><ol class="question-list">${(analysis.questions_to_confirm || []).map((item) => `<li>${escapeHtml(item)}</li>`).join("") || "<li>暂无</li>"}</ol></div>
+    ${historyRows ? `<div class="analysis-group"><div class="analysis-group-title">历史画像对比</div></div>${historyRows}` : ""}`;
 }
 
-function renderBrief(draft) {
-  const brief = draft.brief || {};
-  document.querySelectorAll("[data-brief-field]").forEach((field) => {
-    field.value = brief[field.dataset.briefField] || "";
-  });
-  elements.briefState.textContent = draft.state || "草稿";
+function renderBrief() {
+  const brief = state.activeBrief?.brief || {};
+  document.querySelectorAll("[data-brief-field]").forEach((field) => { field.value = brief[field.dataset.briefField] || ""; });
+  elements.briefState.textContent = state.activeBrief?.status === "confirmed" ? "已确认" : state.activeBrief ? "草稿" : "新草稿";
+  const disabled = !state.activeBrief || state.activeBrief.status === "confirmed";
+  document.querySelectorAll("[data-brief-field], #saveBriefButton, #confirmBriefButton, #copyBriefButton, #copyQuestionsButton").forEach((control) => { control.disabled = disabled; });
 }
 
-function renderProfile(merchant) {
-  const profile = merchant.profile;
-  const preferences = profile.preferences.length
-    ? `<ul class="preference-list">${profile.preferences.map((preference) => `<li>${escapeHtml(preference)}</li>`).join("")}</ul>`
-    : `<div class="profile-empty">确认任务书后，稳定偏好会在这里积累。</div>`;
-  const history = merchant.briefs.length
-    ? merchant.briefs.slice(0, 4).map((brief) => `<div class="history-item"><div class="history-title">${escapeHtml(brief.title)}</div><div class="history-date">${brief.date} · ${brief.state}</div></div>`).join("")
-    : `<div class="profile-empty">还没有已确认的任务。</div>`;
+function profileLabel(type) {
+  return ({ style_preference: "风格偏好", composition_preference: "构图偏好", avoidance: "避雷项", new_preference: "新增偏好", reinforced_preference: "强化偏好", possible_change: "可能变化", one_off_requirement: "单次需求", communication_note: "沟通习惯" })[type] || "合作偏好";
+}
+
+function renderProfile() {
+  const merchant = state.activeMerchant;
+  if (!merchant) return;
+  const items = merchant.profile_items || [];
+  elements.profileConfidence.textContent = items.length ? `${items.length} 条已确认` : "待积累";
+  const profileRows = items.length ? items.map((item) => `<li><div><strong>${escapeHtml(item.content)}</strong><div class="profile-meta">${profileLabel(item.type)} · 置信度 ${Math.round(item.confidence * 100)}%</div><div class="profile-meta">证据：${escapeHtml(item.evidence || "待补充")}</div></div></li>`).join("") : `<div class="profile-empty">确认任务书中的建议后，长期偏好会在这里积累。</div>`;
+  const history = merchant.briefs.filter((brief) => brief.status === "confirmed");
   elements.profileContent.innerHTML = `
-    <section class="profile-section"><div class="profile-title">已确认偏好</div>${preferences}</section>
-    <section class="profile-section"><div class="profile-title">沟通习惯</div><div class="profile-empty">${escapeHtml(profile.communication || "待积累")}</div></section>
-    <section class="profile-section"><div class="profile-title">历史任务</div><div class="project-history">${history}</div></section>`;
-  elements.profileConfidence.textContent = profile.preferences.length ? `${profile.preferences.length} 条偏好` : "待积累";
-
-  const suggestion = merchant.draft.suggestion;
-  if (!suggestion) {
-    elements.profileSuggestion.classList.add("hidden");
-    return;
-  }
+    <section class="profile-section"><div class="profile-title">已确认画像</div>${items.length ? `<ul class="preference-list">${profileRows}</ul>` : profileRows}</section>
+    <section class="profile-section"><div class="profile-title">商家信息</div><div class="profile-empty">${escapeHtml([merchant.industry, merchant.contact_note, merchant.brand_keywords?.join("、")].filter(Boolean).join(" · ") || "待补充")}</div></section>
+    <section class="profile-section"><div class="profile-title">历史任务</div><div class="project-history">${history.length ? history.slice(0, 4).map(historyButton).join("") : `<div class="profile-empty">还没有已确认的任务。</div>`}</div></section>`;
+  const suggestions = merchant.profile_suggestions || [];
+  if (!suggestions.length) { elements.profileSuggestion.classList.add("hidden"); return; }
   elements.profileSuggestion.classList.remove("hidden");
-  elements.profileSuggestion.innerHTML = `<p>建议新增画像：${escapeHtml(suggestion)}</p><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" type="button">采纳</button><button class="small-button" data-profile-action="ignore" type="button">忽略</button></div>`;
+  elements.profileSuggestion.innerHTML = `<p>画像更新建议</p>${suggestions.map((item) => `<div class="suggestion-row"><div class="suggestion-type">${profileLabel(item.type)} · ${Math.round(item.confidence * 100)}%</div><div>${escapeHtml(item.content)}</div><div class="suggestion-evidence">${escapeHtml(item.evidence || "缺少来源证据")}</div><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" data-suggestion-id="${item.id}" type="button">采纳</button><button class="small-button" data-profile-action="ignore" data-suggestion-id="${item.id}" type="button">忽略</button></div></div>`).join("")}`;
 }
 
-function renderWorkspace() {
-  const merchant = activeMerchant();
-  const hasMerchant = Boolean(merchant);
-  elements.workspace.classList.toggle("hidden", !hasMerchant);
-  elements.emptyState.classList.toggle("hidden", hasMerchant);
-  if (!merchant) {
-    elements.merchantTitle.textContent = "选择一个商家";
-    return;
-  }
-  elements.merchantTitle.textContent = merchant.name;
-  elements.chatInput.value = merchant.draft.chat || "";
-  updateChatCount();
-  elements.chatState.textContent = merchant.draft.analysis ? "已分析" : "待分析";
-  renderAnalysis(merchant.draft);
-  renderBrief(merchant.draft);
-  renderProfile(merchant);
+function historyButton(brief) { return `<button class="history-item" data-brief-id="${brief.id}" type="button"><div class="history-title">${escapeHtml(brief.title)}</div><div class="history-date">${new Date(brief.confirmed_at || brief.updated_at).toLocaleDateString("zh-CN")} · 已确认</div></button>`; }
+
+function renderMerchantView() {
+  const merchant = state.activeMerchant;
+  if (!merchant) return;
+  elements.merchantViewTitle.textContent = merchant.name;
+  elements.detailName.value = merchant.name;
+  elements.detailIndustry.value = merchant.industry || "";
+  elements.detailNote.value = merchant.contact_note || "";
+  elements.detailKeywords.value = (merchant.brand_keywords || []).join("、");
+  elements.merchantHistory.innerHTML = merchant.briefs.length ? merchant.briefs.map(historyButton).join("") : `<div class="profile-empty">还没有任务归档。</div>`;
 }
 
 function render() {
   renderMerchantList();
-  renderWorkspace();
+  const hasMerchant = Boolean(state.activeMerchant);
+  elements.merchantTitle.textContent = state.view === "merchants" ? "商家管理" : (state.activeMerchant?.name || "选择一个商家");
+  elements.workspace.classList.toggle("hidden", state.view !== "workspace" || !hasMerchant);
+  elements.merchantView.classList.toggle("hidden", state.view !== "merchants" || !hasMerchant);
+  elements.emptyState.classList.toggle("hidden", hasMerchant || state.view !== "workspace");
+  document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
+  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); }
 }
 
-function updateChatCount() {
-  elements.chatCount.textContent = `${elements.chatInput.value.trim().length} 字`;
+function updateChatInput() {
+  const chat = elements.chatInput.value;
+  elements.chatCount.textContent = `${chat.trim().length} 字`;
+  elements.inputHint.classList.toggle("hidden", chat.trim().length >= 20 || !chat.trim());
+  elements.inputHint.textContent = "聊天内容较短，分析结果可能不完整。";
+  elements.analyzeButton.disabled = !chat.trim();
+  if (state.activeMerchant) sessionStorage.setItem(draftKey(state.activeMerchant.id), JSON.stringify(currentInput()));
+  if (!state.activeBrief) renderAnalysis();
 }
 
-function analyzeChat(chat) {
-  const lower = chat.toLowerCase();
-  const includes = (words) => words.some((word) => lower.includes(word));
-  const explicit = [];
-  const inferred = [];
-  const questions = [];
-
-  if (includes(["海报", "小红书", "朋友圈", "宣传"])) explicit.push("用于社交媒体宣传的活动海报");
-  if (includes(["竖版", "1080", "1440"])) explicit.push("竖版 1080 × 1440 尺寸");
-  if (includes(["店主", "人物"])) explicit.push("画面包含店主角色");
-  if (includes(["柴犬", "狗狗", "宠物"])) explicit.push("画面包含柴犬或宠物");
-  if (includes(["可爱", "手绘"])) explicit.push("可爱手绘风格");
-  if (includes(["明快", "夏天", "夏日"])) explicit.push("明快、带夏日感的配色");
-  if (includes(["不要太花", "留白", "文字位置", "排版空间"])) explicit.push("画面控制复杂度并为文字留出空间");
-  if (includes(["写实", "不太适合"])) explicit.push("避免强写实质感");
-  if (includes(["下周", "初稿", "交付"])) explicit.push("需要在约定节点前提供初稿");
-  if (!explicit.length) explicit.push("从聊天中提取到一项待进一步整理的作画需求");
-
-  if (includes(["周年", "活动"])) inferred.push("视觉重心应预留活动标题和日期区");
-  if (includes(["咖啡", "店铺"])) inferred.push("背景可使用具有识别度的店铺门头或环境元素");
-  if (includes(["小红书", "朋友圈"])) inferred.push("构图优先保证移动端缩略图的主体清晰度");
-  if (!inferred.length) inferred.push("先以主体清晰、信息层级明确为构图方向");
-
-  if (!includes(["预算", "报价"])) questions.push("本次预算或可接受的报价区间是多少？");
-  if (!includes(["参考图", "参考"])) questions.push("是否有希望接近或避开的参考图？");
-  if (!includes(["文字", "文案"])) questions.push("最终需要预留哪些文字内容和位置？");
-  if (!includes(["尺寸", "1080", "1440"])) questions.push("最终发布渠道和尺寸是否已确认？");
-
-  const subject = includes(["柴犬", "狗狗"]) ? "店主手持花束，与柴犬在店铺门口互动或同框。" : "根据聊天确认主体、数量、动作和场景。";
-  const style = includes(["可爱", "手绘"]) ? "可爱手绘，线条轻松；明快但不过度繁杂的夏日配色。" : "根据商家提供的风格词和参考图确认。";
-  const goal = includes(["周年", "活动"]) ? "为周年庆活动制作适合社交媒体传播的主视觉插画。" : "将商家聊天整理为可执行的作画需求。";
-  const avoid = includes(["写实"]) ? "强写实质感、画面元素过多、挤占文字区域。" : "与商家已明确表达的偏好相冲突的处理方式。";
-  const summary = `${goal} 主体围绕${subject.replace("。", "")} 风格方向为${style}`;
-
-  return {
-    summary,
-    explicit,
-    inferred,
-    questions,
-    brief: {
-      goal,
-      subject,
-      style,
-      mustHave: explicit.join("；"),
-      avoid,
-      questions: questions.join("\n"),
-    },
-    suggestion: includes(["可爱", "手绘"]) ? "偏好可爱手绘和明快配色，避免强写实质感。" : "倾向在确认文字排版空间后再开始绘制。",
-  };
+async function refreshMerchant(id = state.activeMerchant?.id) {
+  if (!id) return;
+  const { merchant } = await api(`/api/merchants/${id}`);
+  state.activeMerchant = merchant;
+  state.merchants = state.merchants.map((item) => item.id === merchant.id ? { ...item, brief_count: merchant.briefs.filter((brief) => brief.status === "confirmed").length, profile_count: merchant.profile_items.filter((item) => item.status === "active").length } : item);
 }
 
-function runAnalysis() {
-  const merchant = activeMerchant();
-  if (!merchant) return;
-  const chat = elements.chatInput.value.trim();
-  merchant.draft.chat = chat;
-  if (!chat) {
-    merchant.draft.analysis = null;
-    merchant.draft.brief = {};
-    merchant.draft.suggestion = null;
-    saveData();
-    renderWorkspace();
-    return;
+async function selectMerchant(id) {
+  try {
+    await refreshMerchant(id);
+    state.activeBrief = null;
+    const draft = sessionStorage.getItem(draftKey(id));
+    const input = draft ? JSON.parse(draft) : { chat_text: "", artist_note: "", source_type: "new_requirement", use_merchant_profile: true };
+    elements.chatInput.value = input.chat_text || "";
+    elements.artistNote.value = input.artist_note || "";
+    elements.sourceType.value = input.source_type || "new_requirement";
+    elements.useProfile.checked = input.use_merchant_profile !== false;
+    updateChatInput();
+    render();
+  } catch (error) { showToast(error.message); }
+}
+
+async function runAnalysis() {
+  const merchant = state.activeMerchant;
+  const input = currentInput();
+  if (!merchant || !input.chat_text.trim()) return;
+  state.lastAnalysisInput = input;
+  elements.analysisError.classList.add("hidden");
+  setAnalysisStatus("分析中", "loading");
+  elements.analysisContent.innerHTML = `<div class="analysis-placeholder">正在整理需求、比对历史画像并生成任务书...</div>`;
+  setBusy(true);
+  try {
+    const result = await api("/api/briefs/analyze", { method: "POST", body: JSON.stringify({ merchant_id: merchant.id, ...input }) });
+    state.activeBrief = result.brief;
+    sessionStorage.removeItem(draftKey(merchant.id));
+    await refreshMerchant();
+    render();
+    showToast(result.analysis_mode === "ai" ? "AI 分析完成" : "已生成演示分析，请配置 AI 服务");
+  } catch (error) {
+    setAnalysisStatus("分析失败");
+    elements.analysisErrorText.textContent = error.message;
+    elements.analysisError.classList.remove("hidden");
+    elements.analysisContent.innerHTML = `<div class="analysis-placeholder">原始聊天已保留，可修正后重试。</div>`;
+  } finally { setBusy(false); }
+}
+
+function getEditedBrief() {
+  return Object.fromEntries([...document.querySelectorAll("[data-brief-field]")].map((field) => [field.dataset.briefField, field.value.trim()]));
+}
+
+function asMarkdown(brief, merchant) {
+  return `# ${brief.title || "未命名作画任务"}\n\n商家：${merchant.name}\n状态：${state.activeBrief?.status === "confirmed" ? "已确认" : "草稿"}\n\n${Object.entries(fieldLabels).filter(([key]) => key !== "title").map(([key, label]) => `## ${label}\n${brief[key] || "待确认"}`).join("\n\n")}`;
+}
+
+async function copyText(text, successMessage) {
+  try { await navigator.clipboard.writeText(text); showToast(successMessage); }
+  catch { showToast("浏览器不支持自动复制，请手动选择内容。\n" + text); }
+}
+
+async function saveBrief() {
+  if (!state.activeBrief || state.activeBrief.status === "confirmed") return;
+  try {
+    const { brief } = await api(`/api/briefs/${state.activeBrief.id}`, { method: "PATCH", body: JSON.stringify({ title: getEditedBrief().title, artist_note: getEditedBrief().artist_note, brief: getEditedBrief() }) });
+    state.activeBrief = brief;
+    await refreshMerchant();
+    render();
+    showToast("任务书草稿已保存");
+  } catch (error) { showToast(error.message); }
+}
+
+async function confirmBrief() {
+  if (!state.activeBrief) return;
+  await saveBrief();
+  try {
+    const { brief } = await api(`/api/briefs/${state.activeBrief.id}/confirm`, { method: "POST", body: "{}" });
+    state.activeBrief = brief;
+    await refreshMerchant();
+    render();
+    showToast("任务书已确认并归档");
+  } catch (error) { showToast(error.message); }
+}
+
+async function resolveSuggestion(event) {
+  const button = event.target.closest("[data-profile-action]");
+  if (!button) return;
+  try {
+    const { merchant } = await api(`/api/profile-suggestions/${button.dataset.suggestionId}/${button.dataset.profileAction}`, { method: "POST", body: "{}" });
+    state.activeMerchant = merchant;
+    state.merchants = state.merchants.map((item) => item.id === merchant.id ? { ...item, profile_count: merchant.profile_items.length } : item);
+    render();
+    showToast(button.dataset.profileAction === "accept" ? "画像建议已采纳" : "画像建议已忽略");
+  } catch (error) { showToast(error.message); }
+}
+
+async function openBrief(id) {
+  try {
+    const { brief } = await api(`/api/briefs/${id}`);
+    elements.briefDialogTitle.textContent = brief.title;
+    elements.briefDialogContent.textContent = asMarkdown(brief.brief, state.activeMerchant);
+    elements.briefDialog.showModal();
+  } catch (error) { showToast(error.message); }
+}
+
+function startNewBrief() {
+  if (!state.activeMerchant) return openMerchantDialog();
+  state.view = "workspace";
+  state.activeBrief = null;
+  sessionStorage.removeItem(draftKey(state.activeMerchant.id));
+  elements.chatInput.value = ""; elements.artistNote.value = ""; elements.sourceType.value = "new_requirement"; elements.useProfile.checked = true;
+  updateChatInput(); render(); elements.chatInput.focus();
+}
+
+function openMerchantDialog() { elements.merchantDialog.showModal(); elements.merchantNameInput.focus(); }
+
+async function createMerchant() {
+  try {
+    const { merchant } = await api("/api/merchants", { method: "POST", body: JSON.stringify({ name: elements.merchantNameInput.value, industry: elements.merchantIndustryInput.value, contact_note: elements.merchantNoteInput.value, brand_keywords: elements.merchantKeywordsInput.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) }) });
+    elements.merchantForm.reset(); elements.merchantDialog.close();
+    state.merchants.unshift({ ...merchant, brief_count: 0, profile_count: 0 });
+    await selectMerchant(merchant.id); showToast("商家已创建");
+  } catch (error) { showToast(error.message); }
+}
+
+async function saveMerchantDetails(event) {
+  event.preventDefault();
+  if (!state.activeMerchant) return;
+  try {
+    const { merchant } = await api(`/api/merchants/${state.activeMerchant.id}`, { method: "PATCH", body: JSON.stringify({ name: elements.detailName.value, industry: elements.detailIndustry.value, contact_note: elements.detailNote.value, brand_keywords: elements.detailKeywords.value.split(/[、,，]/).map((item) => item.trim()).filter(Boolean) }) });
+    state.activeMerchant = merchant;
+    state.merchants = state.merchants.map((item) => item.id === merchant.id ? { ...item, name: merchant.name } : item);
+    render(); showToast("商家资料已保存");
+  } catch (error) { showToast(error.message); }
+}
+
+async function removeMerchant() {
+  const merchant = state.activeMerchant;
+  if (!merchant || !window.confirm(`确定删除“${merchant.name}”及其全部任务和画像吗？此操作不可恢复。`)) return;
+  try {
+    await api(`/api/merchants/${merchant.id}`, { method: "DELETE" });
+    state.merchants = state.merchants.filter((item) => item.id !== merchant.id);
+    state.activeMerchant = null; state.activeBrief = null;
+    if (state.merchants[0]) await selectMerchant(state.merchants[0].id);
+    else render();
+    showToast("商家已删除");
+  } catch (error) { showToast(error.message); }
+}
+
+async function init() {
+  try {
+    const health = await api("/api/health");
+    elements.backendState.textContent = health.ai_configured ? "AI 服务已连接" : "演示 AI 模式";
+    if (!health.ai_configured) elements.backendDot.style.background = "#d3a63c";
+    const { merchants } = await api("/api/merchants");
+    state.merchants = merchants;
+    if (merchants.length) await selectMerchant(merchants[0].id);
+    else render();
+  } catch (error) {
+    elements.backendState.textContent = "后端未连接"; elements.backendDot.style.background = "#d75a4a";
+    showToast("无法连接后端，请运行 npm start。"); render();
   }
-  const result = analyzeChat(chat);
-  merchant.draft.analysis = result;
-  merchant.draft.brief = result.brief;
-  merchant.draft.suggestion = result.suggestion;
-  merchant.draft.state = "待确认";
-  saveData();
-  renderWorkspace();
-}
-
-function saveBrief() {
-  const merchant = activeMerchant();
-  if (!merchant) return;
-  merchant.draft.brief = merchant.draft.brief || {};
-  document.querySelectorAll("[data-brief-field]").forEach((field) => {
-    merchant.draft.brief[field.dataset.briefField] = field.value.trim();
-  });
-  merchant.draft.state = "草稿已保存";
-  saveData();
-  renderWorkspace();
-}
-
-function confirmBrief() {
-  const merchant = activeMerchant();
-  if (!merchant) return;
-  saveBrief();
-  const goal = merchant.draft.brief.goal || "未命名任务";
-  merchant.briefs.unshift({
-    id: `b-${Date.now()}`,
-    title: goal.length > 18 ? `${goal.slice(0, 18)}...` : goal,
-    date: new Date().toISOString().slice(0, 10),
-    state: "已确认",
-  });
-  merchant.draft.state = "已确认";
-  saveData();
-  render();
-}
-
-function createMerchant() {
-  const name = elements.merchantNameInput.value.trim();
-  if (!name) return;
-  const merchant = {
-    id: `m-${Date.now()}`,
-    name,
-    note: elements.merchantNoteInput.value.trim(),
-    profile: { preferences: [], communication: "待从实际合作中积累。" },
-    briefs: [],
-    draft: { chat: "", analysis: null, brief: {}, suggestion: null, state: "草稿" },
-  };
-  data.merchants.unshift(merchant);
-  data.activeMerchantId = merchant.id;
-  saveData();
-  elements.merchantForm.reset();
-  elements.merchantDialog.close();
-  render();
-}
-
-function openMerchantDialog() {
-  elements.merchantDialog.showModal();
-  elements.merchantNameInput.focus();
 }
 
 document.querySelector("#newMerchantButton").addEventListener("click", openMerchantDialog);
 document.querySelector("#emptyNewMerchantButton").addEventListener("click", openMerchantDialog);
-document.querySelector("#newBriefButton").addEventListener("click", () => {
-  if (!activeMerchant()) return openMerchantDialog();
-  const merchant = activeMerchant();
-  merchant.draft = { chat: "", analysis: null, brief: {}, suggestion: null, state: "草稿" };
-  saveData();
-  renderWorkspace();
-  elements.chatInput.focus();
-});
-document.querySelector("#analyzeButton").addEventListener("click", runAnalysis);
+document.querySelector("#newBriefButton").addEventListener("click", startNewBrief);
+document.querySelector("#merchantViewNewBrief").addEventListener("click", startNewBrief);
+elements.analyzeButton.addEventListener("click", runAnalysis);
+elements.retryButton.addEventListener("click", runAnalysis);
+elements.chatInput.addEventListener("input", updateChatInput);
+elements.artistNote.addEventListener("input", updateChatInput);
+elements.sourceType.addEventListener("change", updateChatInput);
+elements.useProfile.addEventListener("change", updateChatInput);
 document.querySelector("#saveBriefButton").addEventListener("click", saveBrief);
 document.querySelector("#confirmBriefButton").addEventListener("click", confirmBrief);
-document.querySelector("#resetDemoButton").addEventListener("click", () => {
-  data = structuredClone(defaultData);
-  saveData();
-  render();
-});
+document.querySelector("#copyBriefButton").addEventListener("click", () => state.activeBrief && copyText(asMarkdown(getEditedBrief(), state.activeMerchant), "任务书已复制"));
+document.querySelector("#copyQuestionsButton").addEventListener("click", () => copyText(getEditedBrief().questions || "暂无待确认问题", "待确认问题已复制"));
+document.querySelector("#closeBriefDialog").addEventListener("click", () => elements.briefDialog.close());
+document.querySelector("#deleteMerchantButton").addEventListener("click", removeMerchant);
+elements.merchantDetailForm.addEventListener("submit", saveMerchantDetails);
+elements.merchantForm.addEventListener("submit", (event) => { event.preventDefault(); if (event.submitter?.value === "cancel") return elements.merchantDialog.close(); createMerchant(); });
+elements.merchantList.addEventListener("click", (event) => { const button = event.target.closest("[data-merchant-id]"); if (button) selectMerchant(button.dataset.merchantId); });
+elements.profileSuggestion.addEventListener("click", resolveSuggestion);
+elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
+elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
+document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
 
-elements.chatInput.addEventListener("input", () => {
-  const merchant = activeMerchant();
-  if (!merchant) return;
-  merchant.draft.chat = elements.chatInput.value;
-  merchant.draft.analysis = null;
-  merchant.draft.state = "待分析";
-  updateChatCount();
-  saveData();
-  renderAnalysis(merchant.draft);
-});
-
-elements.merchantList.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-merchant-id]");
-  if (!button) return;
-  data.activeMerchantId = button.dataset.merchantId;
-  saveData();
-  render();
-});
-
-elements.profileSuggestion.addEventListener("click", (event) => {
-  const action = event.target.dataset.profileAction;
-  if (!action) return;
-  const merchant = activeMerchant();
-  if (action === "accept" && merchant.draft.suggestion && !merchant.profile.preferences.includes(merchant.draft.suggestion)) {
-    merchant.profile.preferences.unshift(merchant.draft.suggestion);
-  }
-  merchant.draft.suggestion = null;
-  saveData();
-  renderProfile(merchant);
-});
-
-elements.merchantForm.addEventListener("submit", (event) => {
-  event.preventDefault();
-  if (event.submitter?.value === "cancel") {
-    elements.merchantDialog.close();
-    return;
-  }
-  createMerchant();
-});
-
-render();
+init();
