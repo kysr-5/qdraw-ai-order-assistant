@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f766e" />
+    <title>Qdraw | AI 接单助手</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark">Q</span>
+          <span>Qdraw</span>
+        </div>
+        <nav class="primary-nav" aria-label="主导航">
+          <button class="nav-item active" data-view="workspace" type="button">工作台</button>
+          <button class="nav-item" data-view="merchants" type="button">商家</button>
+        </nav>
+        <div class="sidebar-divider"></div>
+        <div class="merchant-heading">
+          <span>商家</span>
+          <button id="newMerchantButton" class="icon-button" type="button" title="新建商家">+</button>
+        </div>
+        <div id="merchantList" class="merchant-list"></div>
+        <div class="sidebar-footer">
+          <span class="status-dot"></span>
+          <span>本地工作区</span>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">AI 接单工作台</p>
+            <h1 id="merchantTitle">选择一个商家</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="resetDemoButton" class="secondary-button" type="button">重置演示数据</button>
+            <button id="newBriefButton" class="primary-button" type="button">新建需求</button>
+          </div>
+        </header>
+
+        <section id="emptyState" class="empty-state hidden">
+          <div class="empty-state-content">
+            <p class="eyebrow">从一次真实对话开始</p>
+            <h2>把商家聊天整理成可执行的作画任务书。</h2>
+            <p>先新建商家，再粘贴聊天记录。确认后的需求会沉淀为下一次接单可用的偏好。</p>
+            <button id="emptyNewMerchantButton" class="primary-button" type="button">新建商家</button>
+          </div>
+        </section>
+
+        <div id="workspace" class="workspace-grid">
+          <section class="chat-panel panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">输入</p>
+                <h2>商家聊天</h2>
+              </div>
+              <span id="chatState" class="subtle-status">待分析</span>
+            </div>
+            <label class="field-label" for="chatInput">粘贴聊天记录</label>
+            <textarea id="chatInput" placeholder="例如：这次想做一张店铺周年庆海报，人物是店主和一只柴犬，风格要可爱一点..." spellcheck="false"></textarea>
+            <div class="chat-footer">
+              <span id="chatCount" class="character-count">0 字</span>
+              <button id="analyzeButton" class="primary-button" type="button">开始分析</button>
+            </div>
+          </section>
+
+          <section class="analysis-panel panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">提取结果</p>
+                <h2>需求要点</h2>
+              </div>
+              <span id="analysisState" class="analysis-state">等待聊天内容</span>
+            </div>
+            <div id="analysisContent" class="analysis-content">
+              <div class="analysis-placeholder">粘贴聊天后，需求要点会显示在这里。</div>
+            </div>
+          </section>
+
+          <section class="brief-panel panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">可编辑交付物</p>
+                <h2>作画任务书</h2>
+              </div>
+              <span id="briefState" class="subtle-status">草稿</span>
+            </div>
+            <div id="briefForm" class="brief-form">
+              <label class="brief-field"><span>作画目标</span><input data-brief-field="goal" type="text" placeholder="分析后自动生成" /></label>
+              <label class="brief-field"><span>主体与动作</span><textarea data-brief-field="subject" placeholder="分析后自动生成"></textarea></label>
+              <label class="brief-field"><span>风格方向</span><textarea data-brief-field="style" placeholder="分析后自动生成"></textarea></label>
+              <label class="brief-field"><span>必须包含</span><textarea data-brief-field="mustHave" placeholder="分析后自动生成"></textarea></label>
+              <label class="brief-field"><span>避免出现</span><textarea data-brief-field="avoid" placeholder="分析后自动生成"></textarea></label>
+              <label class="brief-field"><span>待确认问题</span><textarea data-brief-field="questions" placeholder="分析后自动生成"></textarea></label>
+            </div>
+            <div class="brief-actions">
+              <button id="saveBriefButton" class="secondary-button" type="button">保存草稿</button>
+              <button id="confirmBriefButton" class="primary-button" type="button">确认任务书</button>
+            </div>
+          </section>
+
+          <aside class="profile-panel panel">
+            <div class="panel-header">
+              <div>
+                <p class="panel-kicker">长期记忆</p>
+                <h2>商家画像</h2>
+              </div>
+              <span id="profileConfidence" class="confidence-label">待积累</span>
+            </div>
+            <div id="profileContent" class="profile-content"></div>
+            <div id="profileSuggestion" class="profile-suggestion hidden"></div>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <dialog id="merchantDialog" class="merchant-dialog">
+      <form method="dialog" id="merchantForm">
+        <div class="dialog-heading">
+          <div>
+            <p class="eyebrow">商家档案</p>
+            <h2>新建商家</h2>
+          </div>
+          <button class="icon-button" value="cancel" type="submit" title="关闭">×</button>
+        </div>
+        <label class="dialog-field">商家名称<input id="merchantNameInput" required type="text" placeholder="例如：花田咖啡" /></label>
+        <label class="dialog-field">备注<input id="merchantNoteInput" type="text" placeholder="例如：小红书店铺，首次合作" /></label>
+        <div class="dialog-actions">
+          <button value="cancel" class="secondary-button" type="submit">取消</button>
+          <button value="default" class="primary-button" type="submit">创建商家</button>
+        </div>
+      </form>
+    </dialog>
+
+    <template id="tagTemplate"><span class="tag"></span></template>
+    <script src="./app.js"></script>
+  </body>
+</html>
