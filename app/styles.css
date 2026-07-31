@@ -200,7 +200,23 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
 .detail-pair strong { display: block; margin-bottom: 3px; color: #637371; font-size: 11px; }
 .raw-chat { max-height: 220px; overflow: auto; padding: 10px; border: 1px solid #dce5e2; border-radius: 5px; background: #fff; color: #405653; white-space: pre-wrap; }
 .privacy-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px; border: 1px solid #ecd4a3; border-radius: 5px; background: #fffaf0; color: #805d19; font-size: 12px; }
-.review-panel { max-width: 1520px; margin: 15px auto 0; padding: 20px; }
+.review-panel, .sketch-panel { max-width: 1520px; margin: 15px auto 0; padding: 20px; }
+.sketch-empty { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, .55fr); gap: 22px; align-items: start; }
+.sketch-layout { display: grid; grid-template-columns: minmax(280px, 440px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.sketch-preview { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #fbfaf4; }
+.sketch-preview img { width: 100%; display: block; aspect-ratio: 4 / 5; object-fit: contain; background: #fbfaf4; }
+.sketch-preview figcaption { padding: 9px 10px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sketch-detail { min-width: 0; }
+.sketch-prompt { margin: 0 0 13px; padding: 12px; border: 1px solid #dce8e4; border-radius: 6px; background: #f7fbfa; color: #29423f; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.sketch-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.sketch-columns section { padding: 13px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.sketch-columns h4 { margin: 0 0 9px; color: #536966; font-size: 12px; }
+.sketch-columns ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; }
+.sketch-columns li { display: grid; gap: 3px; color: #29423f; font-size: 13px; line-height: 1.45; }
+.sketch-columns li span { color: var(--muted); font-size: 12px; }
+.sketch-checklist { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 6px; color: #3d716a; font-size: 12px; }
+.sketch-checklist strong { width: 100%; color: #536966; }
+.sketch-checklist span { padding: 4px 6px; border-radius: 4px; background: #eff8f6; }
 .review-upload-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .6fr); gap: 22px; align-items: start; }
 .review-summary { color: #405653; font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
 .upload-dropzone { min-height: 132px; border: 1px dashed #8fb8b0; border-radius: 6px; background: #f6fbf9; display: grid; place-items: center; align-content: center; gap: 6px; color: #17665e; cursor: pointer; font-size: 13px; font-weight: 700; }
@@ -239,7 +255,7 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
   .merchant-detail-grid { grid-template-columns: 1fr; }
   .merchant-view-header { align-items: start; flex-direction: column; gap: 12px; }
   .input-options { align-items: start; flex-direction: column; }
-  .review-upload-layout, .review-artwork-head, .audit-grid, .feedback-section { grid-template-columns: 1fr; }
+  .review-upload-layout, .review-artwork-head, .audit-grid, .feedback-section, .sketch-empty, .sketch-layout, .sketch-columns { grid-template-columns: 1fr; }
   .review-artwork { max-width: 320px; }
   .feedback-section .review-actions { justify-content: flex-end; }
 }

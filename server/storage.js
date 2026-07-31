@@ -80,6 +80,15 @@ db.exec(`
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS sketch_versions (
+    id TEXT PRIMARY KEY,
+    brief_id TEXT NOT NULL REFERENCES project_briefs(id) ON DELETE CASCADE,
+    plan_json TEXT NOT NULL DEFAULT '{}',
+    svg_text TEXT NOT NULL DEFAULT '',
+    prompt_text TEXT NOT NULL DEFAULT '',
+    generation_mode TEXT NOT NULL DEFAULT 'demo',
+    created_at TEXT NOT NULL
+  );
 `);
 
 const now = () => new Date().toISOString();
@@ -100,6 +109,7 @@ function hydrateBrief(row) {
   brief.profile_updates = db.prepare("SELECT * FROM profile_items WHERE source_brief_id = ? ORDER BY last_seen_at ASC").all(row.id).map(hydrateProfileItem);
   brief.artworks = db.prepare("SELECT * FROM artwork_versions WHERE brief_id = ? ORDER BY created_at DESC").all(row.id).map(hydrateArtwork);
   brief.image_reviews = db.prepare("SELECT * FROM image_reviews WHERE brief_id = ? ORDER BY created_at DESC").all(row.id).map(hydrateReview);
+  brief.sketches = db.prepare("SELECT * FROM sketch_versions WHERE brief_id = ? ORDER BY created_at DESC").all(row.id).map(hydrateSketch);
   return brief;
 }
 
@@ -124,6 +134,15 @@ function hydrateReview(row) {
     audit_json: undefined,
     revision_json: undefined,
     artwork: getArtwork(row.artwork_id),
+  };
+}
+
+function hydrateSketch(row) {
+  const { svg_text, plan_json, ...sketch } = row;
+  return {
+    ...sketch,
+    plan: fromJson(plan_json, {}),
+    file_url: `/api/sketches/${row.id}/file`,
   };
 }
 
@@ -298,6 +317,22 @@ export function updateImageReviewFeedback(id, { merchantFeedback, revision, revi
   db.prepare(`UPDATE image_reviews SET merchant_feedback = ?, revision_json = ?, revision_mode = ?, updated_at = ? WHERE id = ?`)
     .run(merchantFeedback.trim(), JSON.stringify(revision), revisionMode, now(), id);
   return getImageReview(id);
+}
+
+export function createSketchVersion({ briefId, plan, svgText, promptText, generationMode }) {
+  const brief = getBrief(briefId);
+  if (!brief) return null;
+  const id = randomUUID();
+  const createdAt = now();
+  db.prepare(`INSERT INTO sketch_versions (id, brief_id, plan_json, svg_text, prompt_text, generation_mode, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, briefId, JSON.stringify(plan), svgText, promptText || "", generationMode, createdAt);
+  return getSketch(id);
+}
+
+export function getSketch(id, includeSvg = false) {
+  const row = db.prepare("SELECT * FROM sketch_versions WHERE id = ?").get(id);
+  if (!row) return null;
+  return includeSvg ? row : hydrateSketch(row);
 }
 
 export function getAnalysisContext(merchantId) {

@@ -8,6 +8,7 @@ const elements = {
   merchantDialog: document.querySelector("#merchantDialog"), merchantForm: document.querySelector("#merchantForm"), merchantNameInput: document.querySelector("#merchantNameInput"), merchantIndustryInput: document.querySelector("#merchantIndustryInput"), merchantNoteInput: document.querySelector("#merchantNoteInput"), merchantKeywordsInput: document.querySelector("#merchantKeywordsInput"),
   merchantDetailForm: document.querySelector("#merchantDetailForm"), detailName: document.querySelector("#detailMerchantName"), detailIndustry: document.querySelector("#detailMerchantIndustry"), detailNote: document.querySelector("#detailMerchantNote"), detailKeywords: document.querySelector("#detailMerchantKeywords"), merchantHistory: document.querySelector("#merchantHistory"),
   briefDialog: document.querySelector("#briefDialog"), briefDialogTitle: document.querySelector("#briefDialogTitle"), briefDialogContent: document.querySelector("#briefDialogContent"), toast: document.querySelector("#toast"), backendState: document.querySelector("#backendState"), backendDot: document.querySelector("#backendDot"),
+  sketchPanel: document.querySelector("#sketchPanel"), sketchContent: document.querySelector("#sketchContent"), sketchState: document.querySelector("#sketchState"),
   reviewPanel: document.querySelector("#reviewPanel"), reviewContent: document.querySelector("#reviewContent"), reviewState: document.querySelector("#reviewState"),
 };
 
@@ -132,6 +133,29 @@ function checkLabel(status) {
 
 function severityLabel(severity) { return ({ high: "高优先级", medium: "中优先级", low: "低优先级" })[severity] || "中优先级"; }
 
+function sketchPrompt(sketch = {}) {
+  const plan = sketch.plan || {};
+  return plan.artist_prompt || sketch.prompt_text || plan.concept_prompt || "";
+}
+
+function renderSketch() {
+  const brief = state.activeBrief;
+  const available = state.view === "workspace" && brief?.status === "confirmed";
+  elements.sketchPanel.classList.toggle("hidden", !available);
+  if (!available) return;
+  const sketch = (brief.sketches || [])[0];
+  elements.sketchState.textContent = sketch ? (sketch.generation_mode === "ai" ? "AI 草图已生成" : "演示草图") : "等待生成";
+  if (!sketch) {
+    elements.sketchContent.innerHTML = `<div class="sketch-empty"><div><p class="review-summary">根据已确认任务书生成一张构图线稿，包含主体位置、文字区和起稿提示词，给画师进入草图阶段前快速对齐。</p><button id="generateSketchButton" class="primary-button" type="button">生成草图</button></div><div class="review-empty">确认任务书后，可先生成草图，再进入正式绘制与成稿审查。</div></div>`;
+    return;
+  }
+  const plan = sketch.plan || {};
+  const elementsList = plan.elements || [];
+  const notes = plan.layout_notes || [];
+  const checklist = plan.checklist || [];
+  elements.sketchContent.innerHTML = `<div class="sketch-layout"><figure class="sketch-preview"><img src="${sketch.file_url}" alt="${escapeHtml(plan.title || "AI 构图草图")}" /><figcaption>${escapeHtml(plan.title || "构图草图")} · ${sketch.generation_mode === "ai" ? "AI 生成方案" : "演示方案"}</figcaption></figure><div class="sketch-detail"><div class="review-section-heading"><div><p class="panel-kicker">给画师</p><h3>起稿提示词</h3></div><div class="topbar-actions"><button id="copySketchPromptButton" class="secondary-button" type="button">复制提示词</button><button id="generateSketchButton" class="secondary-button" type="button">重新生成</button></div></div><p class="sketch-prompt">${escapeHtml(sketchPrompt(sketch) || "暂无提示词")}</p>${plan.mood ? `<div class="strength-row"><strong>氛围</strong><span>${escapeHtml(plan.mood)}</span></div>` : ""}<div class="sketch-columns"><section><h4>画面元素</h4>${elementsList.length ? `<ul>${elementsList.map((item) => `<li><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.position)} · ${escapeHtml(item.size)} · ${escapeHtml(item.note || item.role)}</span></li>`).join("")}</ul>` : `<p class="review-empty">暂无元素标注。</p>`}</section><section><h4>构图备注</h4>${notes.length ? `<ul>${notes.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : `<p class="review-empty">暂无备注。</p>`}${checklist.length ? `<div class="sketch-checklist"><strong>起稿检查</strong>${checklist.map((item) => `<span>□ ${escapeHtml(item)}</span>`).join("")}</div>` : ""}</section></div></div></div>`;
+}
+
 function renderRevision(revision = {}) {
   const changes = revision.must_change || [];
   const optional = revision.optional_improvements || [];
@@ -172,7 +196,7 @@ function render() {
   elements.merchantView.classList.toggle("hidden", state.view !== "merchants" || !hasMerchant);
   elements.emptyState.classList.toggle("hidden", hasMerchant || state.view !== "workspace");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderReview(); }
+  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderSketch(); renderReview(); }
 }
 
 function updateChatInput() {
@@ -286,6 +310,23 @@ async function generateRevision() {
     showToast("修改单已更新");
   } catch (error) {
     button.disabled = false; button.textContent = "生成修改单";
+    showToast(error.message);
+  }
+}
+
+async function generateSketch() {
+  const brief = state.activeBrief;
+  if (!brief || brief.status !== "confirmed") return showToast("请先确认任务书");
+  const button = elements.sketchContent.querySelector("#generateSketchButton");
+  if (button) { button.disabled = true; button.textContent = "正在生成..."; }
+  try {
+    await api(`/api/briefs/${brief.id}/sketches`, { method: "POST", body: "{}" });
+    await refreshMerchant();
+    selectActiveBriefFromMerchant();
+    render();
+    showToast("草图已生成");
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = "生成草图"; }
     showToast(error.message);
   }
 }
@@ -464,6 +505,13 @@ elements.reviewContent.addEventListener("click", (event) => {
   if (event.target.closest("#copyRevisionButton")) {
     const review = state.activeBrief?.image_reviews?.[0];
     if (review) copyText(revisionAsMarkdown(review), "修改单已复制");
+  }
+});
+elements.sketchContent.addEventListener("click", (event) => {
+  if (event.target.closest("#generateSketchButton")) generateSketch();
+  if (event.target.closest("#copySketchPromptButton")) {
+    const sketch = state.activeBrief?.sketches?.[0];
+    if (sketch) copyText(sketchPrompt(sketch), "草图提示词已复制");
   }
 });
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));

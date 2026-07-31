@@ -7,7 +7,8 @@ import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { analyzeRequest, analysisToBrief, toStoredSuggestions } from "./analysis.js";
 import { createDemoRevision, createRevisionBrief, reviewArtwork, textConfigured, visionConfigured } from "./review.js";
-import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createArtworkVersion, createImageReview, createMerchant, deleteBriefRawSource, deleteMerchant, getAnalysisContext, getArtwork, getBrief, getImageReview, getMerchant, ignoreSuggestion, listArtworkPathsForMerchant, listMerchants, seedDemoData, updateBrief, updateImageReviewFeedback, updateMerchant } from "./storage.js";
+import { createSketchPlan, renderSketchSvg } from "./sketch.js";
+import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createArtworkVersion, createImageReview, createMerchant, createSketchVersion, deleteBriefRawSource, deleteMerchant, getAnalysisContext, getArtwork, getBrief, getImageReview, getMerchant, getSketch, ignoreSuggestion, listArtworkPathsForMerchant, listMerchants, seedDemoData, updateBrief, updateImageReviewFeedback, updateMerchant } from "./storage.js";
 
 const rootDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 const appDirectory = join(rootDirectory, "app");
@@ -53,7 +54,7 @@ function decodeArtwork(dataUrl) {
 
 async function handleApi(request, response, pathname) {
   const method = request.method;
-  if (method === "GET" && pathname === "/api/health") return sendJson(response, 200, { ok: true, ai_configured: textConfigured(), text_ai_configured: textConfigured(), vision_ai_configured: visionConfigured() });
+  if (method === "GET" && pathname === "/api/health") return sendJson(response, 200, { ok: true, ai_configured: textConfigured(), text_ai_configured: textConfigured(), vision_ai_configured: visionConfigured(), sketch_ai_configured: textConfigured() });
   if (method === "GET" && pathname === "/api/merchants") return sendJson(response, 200, { merchants: listMerchants() });
   if (method === "POST" && pathname === "/api/merchants") {
     const input = await readJson(request);
@@ -97,6 +98,25 @@ async function handleApi(request, response, pathname) {
       response.writeHead(200, { "Content-Type": artwork.mime_type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" });
       return response.end(content);
     } catch { return notFound(response); }
+  }
+  const sketchFileMatch = pathname.match(/^\/api\/sketches\/([^/]+)\/file$/);
+  if (sketchFileMatch && method === "GET") {
+    const sketch = getSketch(decodeURIComponent(sketchFileMatch[1]), true);
+    if (!sketch) return notFound(response);
+    response.writeHead(200, { "Content-Type": "image/svg+xml; charset=utf-8", "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff" });
+    return response.end(sketch.svg_text);
+  }
+  const sketchMatch = pathname.match(/^\/api\/briefs\/([^/]+)\/sketches$/);
+  if (sketchMatch && method === "POST") {
+    const brief = getBrief(decodeURIComponent(sketchMatch[1]));
+    if (!brief) return notFound(response);
+    if (brief.status !== "confirmed") return badRequest(response, "请先确认任务书，再生成给画师看的草图");
+    const merchant = getMerchant(brief.merchant_id);
+    const result = await createSketchPlan({ brief, merchant });
+    const svgText = renderSketchSvg(result.plan);
+    const promptText = result.plan.artist_prompt || result.plan.concept_prompt || "";
+    const sketch = createSketchVersion({ briefId: brief.id, plan: result.plan, svgText, promptText, generationMode: result.mode });
+    return sendJson(response, 201, { sketch });
   }
   const artworkReviewMatch = pathname.match(/^\/api\/briefs\/([^/]+)\/artwork-reviews$/);
   if (artworkReviewMatch && method === "POST") {
