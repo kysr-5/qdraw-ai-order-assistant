@@ -107,6 +107,7 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
 .preference-list li::before { content: ""; width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: #7fa9a2; }
 .project-history { display: grid; gap: 8px; }
 .history-item { padding: 10px; background: #f4f7f6; border-radius: 6px; }
+.history-item.active { background: #e0f2ef; box-shadow: inset 0 0 0 1px #8bc8bd; }
 .history-title { font-size: 13px; font-weight: 700; }
 .history-date { margin-top: 3px; color: var(--muted); font-size: 11px; }
 .profile-suggestion { margin-top: 19px; padding: 13px; background: #eff8f6; border: 1px solid #cce9e3; border-radius: 6px; }

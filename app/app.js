@@ -114,7 +114,11 @@ function suggestionEditor(item) {
   return `<div class="suggestion-editor" data-suggestion-editor="${item.id}"><textarea data-suggestion-field="content">${escapeHtml(item.content)}</textarea><select data-suggestion-field="type">${types.map(([value, label]) => `<option value="${value}"${item.type === value ? " selected" : ""}>${label}</option>`).join("")}</select><input data-suggestion-field="confidence" type="number" min="10" max="95" value="${Math.round(item.confidence * 100)}" title="置信度百分比" /><div class="suggestion-evidence">${escapeHtml(item.evidence || "缺少来源证据")}</div><div class="suggestion-actions"><button class="small-button confirm" data-profile-action="accept" data-suggestion-id="${item.id}" type="button">确认采纳</button><button class="small-button" data-profile-action="cancel-edit" data-suggestion-id="${item.id}" type="button">取消</button></div></div>`;
 }
 
-function historyButton(brief) { return `<button class="history-item" data-brief-id="${brief.id}" type="button"><div class="history-title">${escapeHtml(brief.title)}</div><div class="history-date">${new Date(brief.confirmed_at || brief.updated_at).toLocaleDateString("zh-CN")} · 已确认</div></button>`; }
+function historyButton(brief) {
+  const active = brief.id === state.activeBrief?.id ? " active" : "";
+  const statusLabel = brief.status === "confirmed" ? "已确认" : "草稿";
+  return `<button class="history-item${active}" data-brief-id="${brief.id}" type="button"><div class="history-title">${escapeHtml(brief.title)}</div><div class="history-date">${new Date(brief.confirmed_at || brief.updated_at).toLocaleDateString("zh-CN")} · ${statusLabel}</div></button>`;
+}
 
 function renderMerchantView() {
   const merchant = state.activeMerchant;
@@ -222,7 +226,7 @@ async function refreshMerchant(id = state.activeMerchant?.id) {
 async function selectMerchant(id) {
   try {
     await refreshMerchant(id);
-    state.activeBrief = null;
+    state.activeBrief = state.activeMerchant.briefs[0] || null;
     state.selectedArtwork = null;
     const draft = sessionStorage.getItem(draftKey(id));
     const input = draft ? JSON.parse(draft) : { chat_text: "", artist_note: "", source_type: "new_requirement", use_merchant_profile: true };
@@ -232,6 +236,19 @@ async function selectMerchant(id) {
     elements.useProfile.checked = input.use_merchant_profile !== false;
     updateChatInput();
     render();
+  } catch (error) { showToast(error.message); }
+}
+
+async function activateBrief(id) {
+  try {
+    const { brief } = await api(`/api/briefs/${id}`);
+    state.activeBrief = brief;
+    state.view = "workspace";
+    state.selectedArtwork = null;
+    if (!state.activeMerchant || state.activeMerchant.id !== brief.merchant_id) await refreshMerchant(brief.merchant_id);
+    else state.activeMerchant.briefs = state.activeMerchant.briefs.map((item) => item.id === brief.id ? brief : item);
+    render();
+    showToast("已打开历史任务");
   } catch (error) { showToast(error.message); }
 }
 
@@ -362,6 +379,7 @@ async function confirmBrief() {
     const { brief } = await api(`/api/briefs/${state.activeBrief.id}/confirm`, { method: "POST", body: "{}" });
     state.activeBrief = brief;
     await refreshMerchant();
+    selectActiveBriefFromMerchant();
     render();
     showToast("任务书已确认并归档");
   } catch (error) { showToast(error.message); }
@@ -495,8 +513,8 @@ elements.merchantDetailForm.addEventListener("submit", saveMerchantDetails);
 elements.merchantForm.addEventListener("submit", (event) => { event.preventDefault(); if (event.submitter?.value === "cancel") return elements.merchantDialog.close(); createMerchant(); });
 elements.merchantList.addEventListener("click", (event) => { const button = event.target.closest("[data-merchant-id]"); if (button) selectMerchant(button.dataset.merchantId); });
 elements.profileSuggestion.addEventListener("click", resolveSuggestion);
-elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
-elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
+elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
+elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
 elements.briefDialog.addEventListener("click", (event) => { const button = event.target.closest("[data-delete-raw-source]"); if (button) deleteRawSource(button.dataset.deleteRawSource); });
 elements.reviewContent.addEventListener("change", (event) => { if (event.target.matches("#artworkFile")) handleArtworkSelect(event); });
 elements.reviewContent.addEventListener("click", (event) => {
