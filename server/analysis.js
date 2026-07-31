@@ -140,15 +140,20 @@ export function createDemoAnalysis(input, context) {
 }
 
 export async function analyzeRequest(input, context) {
-  if (!process.env.AI_API_KEY || !process.env.AI_MODEL) {
+  const config = {
+    url: process.env.TEXT_AI_API_URL || process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions",
+    key: process.env.TEXT_AI_API_KEY || process.env.AI_API_KEY,
+    model: process.env.TEXT_AI_MODEL || process.env.AI_MODEL,
+  };
+  if (!config.key || !config.model) {
     return { mode: "demo", analysis: createDemoAnalysis(input, context) };
   }
   const system = `你是服务于插画师的接单需求分析助手。请严格输出 JSON，不要 Markdown。将商家明确说过的要求与推断分开；画像只能提出建议，不能直接写入。JSON 结构必须符合：${schemaDescription}`;
-  const response = await fetch(process.env.AI_API_URL || "https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(config.url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.AI_API_KEY}` },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
     body: JSON.stringify({
-      model: process.env.AI_MODEL,
+      model: config.model,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
