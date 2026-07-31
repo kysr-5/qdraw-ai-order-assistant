@@ -109,7 +109,10 @@ async function requestJson(config, payload) {
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) throw new Error(`AI 服务返回 ${response.status}`);
+  if (!response.ok) {
+    const detail = (await response.text()).replace(/\s+/g, " ").slice(0, 600);
+    throw new Error(`AI 服务返回 ${response.status}${detail ? `：${detail}` : ""}`);
+  }
   const body = await response.json();
   const content = body.choices?.[0]?.message?.content;
   if (!content) throw new Error("AI 服务未返回可用内容");

@@ -191,9 +191,12 @@ export function createAnalyzedBrief(input) {
   const id = randomUUID();
   const createdAt = now();
   const title = input.brief.title || input.analysis.drawing_goal || "未命名作画任务";
+  const sourceType = input.source_type || "new_requirement";
+  const chatText = input.chat_text || "";
+  const artistNote = input.artist_note || "";
   db.prepare(`INSERT INTO project_briefs (id, merchant_id, title, source_type, chat_text, artist_note, analysis_json, brief_json, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?)`)
-    .run(id, input.merchant_id, title, input.source_type, input.chat_text, input.artist_note || "", JSON.stringify(input.analysis), JSON.stringify(input.brief), createdAt, createdAt);
-  for (const suggestion of input.suggestions) {
+    .run(id, input.merchant_id, title, sourceType, chatText, artistNote, JSON.stringify(input.analysis), JSON.stringify(input.brief), createdAt, createdAt);
+  for (const suggestion of input.suggestions || []) {
     db.prepare(`INSERT INTO profile_suggestions (id, merchant_id, brief_id, type, content, evidence, confidence, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?)`)
       .run(randomUUID(), input.merchant_id, id, suggestion.type, suggestion.content, suggestion.evidence || "", suggestion.confidence || 0.6, createdAt);
   }
