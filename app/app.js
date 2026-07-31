@@ -1,4 +1,4 @@
-const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "workspace", lastAnalysisInput: null, editingSuggestionId: null };
+const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "workspace", lastAnalysisInput: null, editingSuggestionId: null, selectedArtwork: null };
 
 const elements = {
   merchantList: document.querySelector("#merchantList"), merchantTitle: document.querySelector("#merchantTitle"), workspace: document.querySelector("#workspace"), emptyState: document.querySelector("#emptyState"), merchantView: document.querySelector("#merchantView"), merchantViewTitle: document.querySelector("#merchantViewTitle"),
@@ -8,6 +8,7 @@ const elements = {
   merchantDialog: document.querySelector("#merchantDialog"), merchantForm: document.querySelector("#merchantForm"), merchantNameInput: document.querySelector("#merchantNameInput"), merchantIndustryInput: document.querySelector("#merchantIndustryInput"), merchantNoteInput: document.querySelector("#merchantNoteInput"), merchantKeywordsInput: document.querySelector("#merchantKeywordsInput"),
   merchantDetailForm: document.querySelector("#merchantDetailForm"), detailName: document.querySelector("#detailMerchantName"), detailIndustry: document.querySelector("#detailMerchantIndustry"), detailNote: document.querySelector("#detailMerchantNote"), detailKeywords: document.querySelector("#detailMerchantKeywords"), merchantHistory: document.querySelector("#merchantHistory"),
   briefDialog: document.querySelector("#briefDialog"), briefDialogTitle: document.querySelector("#briefDialogTitle"), briefDialogContent: document.querySelector("#briefDialogContent"), toast: document.querySelector("#toast"), backendState: document.querySelector("#backendState"), backendDot: document.querySelector("#backendDot"),
+  reviewPanel: document.querySelector("#reviewPanel"), reviewContent: document.querySelector("#reviewContent"), reviewState: document.querySelector("#reviewState"),
 };
 
 const fieldLabels = {
@@ -125,6 +126,44 @@ function renderMerchantView() {
   elements.merchantHistory.innerHTML = merchant.briefs.length ? merchant.briefs.map(historyButton).join("") : `<div class="profile-empty">还没有任务归档。</div>`;
 }
 
+function checkLabel(status) {
+  return ({ pass: "通过", partial: "部分符合", fail: "未符合", not_evaluable: "暂无法判断" })[status] || "暂无法判断";
+}
+
+function severityLabel(severity) { return ({ high: "高优先级", medium: "中优先级", low: "低优先级" })[severity] || "中优先级"; }
+
+function renderRevision(revision = {}) {
+  const changes = revision.must_change || [];
+  const optional = revision.optional_improvements || [];
+  const keep = revision.do_not_change || [];
+  const questions = revision.questions_to_confirm || [];
+  return `<section class="review-section revision-section"><div class="review-section-heading"><div><p class="panel-kicker">给画师的下一步</p><h3>修改单</h3></div><button id="copyRevisionButton" class="secondary-button" type="button">复制修改单</button></div><p class="review-summary">${escapeHtml(revision.summary || "审查完成后会生成可执行的修改单。")}</p>${revision.merchant_intent?.length ? `<div class="feedback-intent"><strong>商家意图</strong>${revision.merchant_intent.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}<div class="change-list">${changes.length ? changes.map((item) => `<article class="change-item"><span class="priority-number">${item.priority}</span><div><strong>${escapeHtml(item.action)}</strong><p><b>原因：</b>${escapeHtml(item.reason || "根据审查结论")}</p><p><b>验收：</b>${escapeHtml(item.acceptance || "与任务书一致")}</p></div></article>`).join("") : `<p class="review-empty">当前没有可确定的必改项。可以补充商家反馈，或配置视觉模型后重新审查。</p>`}</div>${optional.length ? `<div class="review-subgroup"><h4>可选优化</h4><ul>${optional.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}${keep.length ? `<div class="review-subgroup"><h4>建议保留</h4><ul>${keep.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}${questions.length ? `<div class="review-subgroup questions"><h4>仍待确认</h4><ul>${questions.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}</section>`;
+}
+
+function renderReview() {
+  const brief = state.activeBrief;
+  const available = state.view === "workspace" && brief?.status === "confirmed";
+  elements.reviewPanel.classList.toggle("hidden", !available);
+  if (!available) return;
+  const review = (brief.image_reviews || [])[0];
+  elements.reviewState.textContent = review ? (review.audit_mode === "ai" ? "视觉审查已完成" : "演示审查") : "等待上传成稿";
+  if (!review) {
+    const selected = state.selectedArtwork;
+    elements.reviewContent.innerHTML = `<div class="review-upload-layout"><div><p class="review-summary">上传当前成稿后，系统会逐项核对已确认任务书，并将商家反馈转换成具体修改动作。</p><label class="upload-dropzone" for="artworkFile"><input id="artworkFile" type="file" accept="image/png,image/jpeg,image/webp" /><span>选择成稿图片</span><small>支持 PNG、JPG、WebP，建议小于 7 MB</small></label><label class="review-note-label" for="artworkNote">版本备注<textarea id="artworkNote" placeholder="例如：V2，已调整人物表情和标题区域">${escapeHtml(selected?.note || "")}</textarea></label><div class="review-actions"><button id="uploadArtworkButton" class="primary-button" type="button" ${selected ? "" : "disabled"}>上传并开始审查</button></div></div>${selected ? `<figure class="artwork-preview"><img src="${selected.dataUrl}" alt="待审查成稿预览" /><figcaption>${escapeHtml(selected.file.name)}</figcaption></figure>` : `<div class="review-empty">确认任务书后，先上传一张成稿开始首轮审查。</div>`}</div>`;
+    return;
+  }
+  const audit = review.audit || {};
+  const dimensions = audit.aesthetic_dimensions || [];
+  const checks = audit.requirement_checks || [];
+  const issues = audit.issues || [];
+  elements.reviewContent.innerHTML = `<div class="review-artwork-head"><figure class="review-artwork"><img src="${review.artwork?.file_url || ""}" alt="${escapeHtml(review.artwork?.file_name || "成稿")}" /><figcaption>${escapeHtml(review.artwork?.file_name || "成稿")} ${review.artwork?.note ? `· ${escapeHtml(review.artwork.note)}` : ""}</figcaption></figure><div><p class="review-summary">${escapeHtml(audit.summary || "审查结果待生成")}</p><p class="review-mode-note">${review.audit_mode === "ai" ? "已由视觉模型基于图片与任务书生成。" : "当前为演示审查；配置视觉模型后可得到基于实际画面的证据。"}</p></div></div><div class="audit-grid"><section class="review-section"><h3>审美要素</h3><div class="dimension-list">${dimensions.length ? dimensions.map((item) => `<article class="dimension"><div><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.observation)}</p></div><span class="rating">${item.rating}/5</span></article>`).join("") : `<p class="review-empty">暂无可用观察。</p>`}</div></section><section class="review-section"><h3>任务书核对</h3><div class="requirement-list">${checks.length ? checks.map((item) => `<article class="requirement"><span class="check-status ${item.status}">${checkLabel(item.status)}</span><div><strong>${escapeHtml(item.requirement)}</strong><p>${escapeHtml(item.evidence || "暂无画面证据")}</p>${item.recommendation ? `<p class="recommendation">建议：${escapeHtml(item.recommendation)}</p>` : ""}</div></article>`).join("") : `<p class="review-empty">暂无可核对的要求。</p>`}</div></section></div><section class="review-section issues-section"><h3>问题与优先级</h3>${audit.strengths?.length ? `<div class="strength-row"><strong>画面优势</strong>${audit.strengths.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}<div class="issue-list">${issues.length ? issues.map((item) => `<article class="issue"><span class="severity ${item.severity}">${severityLabel(item.severity)}</span><div><strong>${escapeHtml(item.category)}</strong><p>${escapeHtml(item.observation)}</p><p class="recommendation">修改方向：${escapeHtml(item.recommendation || "待补充")}</p></div></article>`).join("") : `<p class="review-empty">暂无模型确认的问题。请结合商家反馈判断是否需要修改。</p>`}</div></section><section class="review-section feedback-section"><div><p class="panel-kicker">商家确认后</p><h3>反馈转修改单</h3></div><label for="merchantFeedback">商家反馈<textarea id="merchantFeedback" placeholder="例如：蛋糕再突出一点，整体希望更清新，不要调整人物表情。">${escapeHtml(review.merchant_feedback || "")}</textarea></label><div class="review-actions"><button id="generateRevisionButton" class="primary-button" type="button">生成修改单</button></div></section>${renderRevision(review.revision)}`;
+}
+
+function revisionAsMarkdown(review) {
+  const revision = review.revision || {};
+  return `# ${state.activeBrief?.title || "作画任务"} 修改单\n\n${revision.summary || ""}\n\n${(revision.must_change || []).map((item) => `${item.priority}. ${item.action}\n原因：${item.reason || ""}\n验收：${item.acceptance || ""}`).join("\n\n") || "暂无必改项"}${revision.optional_improvements?.length ? `\n\n可选优化\n${revision.optional_improvements.map((item) => `- ${item}`).join("\n")}` : ""}${revision.do_not_change?.length ? `\n\n建议保留\n${revision.do_not_change.map((item) => `- ${item}`).join("\n")}` : ""}`;
+}
+
 function render() {
   renderMerchantList();
   const hasMerchant = Boolean(state.activeMerchant);
@@ -133,7 +172,7 @@ function render() {
   elements.merchantView.classList.toggle("hidden", state.view !== "merchants" || !hasMerchant);
   elements.emptyState.classList.toggle("hidden", hasMerchant || state.view !== "workspace");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); }
+  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderReview(); }
 }
 
 function updateChatInput() {
@@ -160,6 +199,7 @@ async function selectMerchant(id) {
   try {
     await refreshMerchant(id);
     state.activeBrief = null;
+    state.selectedArtwork = null;
     const draft = sessionStorage.getItem(draftKey(id));
     const input = draft ? JSON.parse(draft) : { chat_text: "", artist_note: "", source_type: "new_requirement", use_merchant_profile: true };
     elements.chatInput.value = input.chat_text || "";
@@ -193,6 +233,61 @@ async function runAnalysis() {
     elements.analysisError.classList.remove("hidden");
     elements.analysisContent.innerHTML = `<div class="analysis-placeholder">原始聊天已保留，可修正后重试。</div>`;
   } finally { setBusy(false); }
+}
+
+function selectActiveBriefFromMerchant() {
+  if (!state.activeBrief || !state.activeMerchant) return;
+  state.activeBrief = state.activeMerchant.briefs.find((brief) => brief.id === state.activeBrief.id) || state.activeBrief;
+}
+
+function handleArtworkSelect(event) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) return showToast("请选择 PNG、JPG 或 WebP 图片");
+  if (file.size > 7_000_000) return showToast("图片请控制在 7 MB 以内");
+  const reader = new FileReader();
+  reader.onload = () => { state.selectedArtwork = { file, dataUrl: reader.result, note: "" }; renderReview(); };
+  reader.onerror = () => showToast("图片读取失败，请重新选择");
+  reader.readAsDataURL(file);
+}
+
+async function uploadArtwork() {
+  const selected = state.selectedArtwork;
+  const brief = state.activeBrief;
+  if (!selected || !brief) return;
+  const note = elements.reviewContent.querySelector("#artworkNote")?.value.trim() || "";
+  selected.note = note;
+  const button = elements.reviewContent.querySelector("#uploadArtworkButton");
+  button.disabled = true; button.textContent = "正在审查...";
+  try {
+    await api(`/api/briefs/${brief.id}/artwork-reviews`, { method: "POST", body: JSON.stringify({ data_url: selected.dataUrl, file_name: selected.file.name, note }) });
+    state.selectedArtwork = null;
+    await refreshMerchant();
+    selectActiveBriefFromMerchant();
+    render();
+    showToast("成稿审查已生成");
+  } catch (error) {
+    button.disabled = false; button.textContent = "上传并开始审查";
+    showToast(error.message);
+  }
+}
+
+async function generateRevision() {
+  const review = state.activeBrief?.image_reviews?.[0];
+  const feedback = elements.reviewContent.querySelector("#merchantFeedback")?.value.trim();
+  if (!review || !feedback) return showToast("请先输入商家反馈");
+  const button = elements.reviewContent.querySelector("#generateRevisionButton");
+  button.disabled = true; button.textContent = "正在生成...";
+  try {
+    await api(`/api/image-reviews/${review.id}/feedback`, { method: "POST", body: JSON.stringify({ merchant_feedback: feedback }) });
+    await refreshMerchant();
+    selectActiveBriefFromMerchant();
+    render();
+    showToast("修改单已更新");
+  } catch (error) {
+    button.disabled = false; button.textContent = "生成修改单";
+    showToast(error.message);
+  }
 }
 
 function getEditedBrief() {
@@ -283,6 +378,7 @@ function startNewBrief() {
   if (!state.activeMerchant) return openMerchantDialog();
   state.view = "workspace";
   state.activeBrief = null;
+  state.selectedArtwork = null;
   sessionStorage.removeItem(draftKey(state.activeMerchant.id));
   elements.chatInput.value = ""; elements.artistNote.value = ""; elements.sourceType.value = "new_requirement"; elements.useProfile.checked = true;
   updateChatInput(); render(); elements.chatInput.focus();
@@ -361,6 +457,15 @@ elements.profileSuggestion.addEventListener("click", resolveSuggestion);
 elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
 elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) openBrief(button.dataset.briefId); });
 elements.briefDialog.addEventListener("click", (event) => { const button = event.target.closest("[data-delete-raw-source]"); if (button) deleteRawSource(button.dataset.deleteRawSource); });
+elements.reviewContent.addEventListener("change", (event) => { if (event.target.matches("#artworkFile")) handleArtworkSelect(event); });
+elements.reviewContent.addEventListener("click", (event) => {
+  if (event.target.closest("#uploadArtworkButton")) uploadArtwork();
+  if (event.target.closest("#generateRevisionButton")) generateRevision();
+  if (event.target.closest("#copyRevisionButton")) {
+    const review = state.activeBrief?.image_reviews?.[0];
+    if (review) copyText(revisionAsMarkdown(review), "修改单已复制");
+  }
+});
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
 
 init();

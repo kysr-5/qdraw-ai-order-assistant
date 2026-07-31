@@ -32,6 +32,24 @@ AI_MODEL=qwen-plus
 
 ## 项目文档索引
 
+## 成稿审查配置
+
+成稿审查分为两条模型链路：文本模型用于聊天需求提取与商家反馈整理；视觉模型用于读取成稿、核对任务书和提取画面审查证据。密钥只填写在本机 `.env`，前端不会接触密钥。
+
+```text
+# DeepSeek：文本需求与修改单
+TEXT_AI_API_URL=https://api.deepseek.com/chat/completions
+TEXT_AI_API_KEY=你的 DeepSeek API Key
+TEXT_AI_MODEL=deepseek-chat
+
+# 阿里云百炼：成稿图片审查（将 WorkspaceId 换为业务空间 ID）
+VISION_AI_API_URL=https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1/chat/completions
+VISION_AI_API_KEY=你的百炼 API Key
+VISION_AI_MODEL=qwen3.7-plus
+```
+
+操作顺序：确认任务书 → 上传 PNG/JPG/WebP 成稿（建议小于 7 MB）→ 查看审美要素与需求核对 → 粘贴商家反馈 → 生成画师修改单。未配置模型时，系统会明确标记为“演示审查”，不会把演示结果伪装成真实的视觉判断。
+
 这个目录用于沉淀 Qdraw 后续规划、需求、产品迭代、技术认证和里程碑资料。
 
 ## 目录结构

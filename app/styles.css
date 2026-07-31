@@ -200,10 +200,46 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
 .detail-pair strong { display: block; margin-bottom: 3px; color: #637371; font-size: 11px; }
 .raw-chat { max-height: 220px; overflow: auto; padding: 10px; border: 1px solid #dce5e2; border-radius: 5px; background: #fff; color: #405653; white-space: pre-wrap; }
 .privacy-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px; border: 1px solid #ecd4a3; border-radius: 5px; background: #fffaf0; color: #805d19; font-size: 12px; }
+.review-panel { max-width: 1520px; margin: 15px auto 0; padding: 20px; }
+.review-upload-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, .6fr); gap: 22px; align-items: start; }
+.review-summary { color: #405653; font-size: 13px; line-height: 1.7; margin-bottom: 14px; }
+.upload-dropzone { min-height: 132px; border: 1px dashed #8fb8b0; border-radius: 6px; background: #f6fbf9; display: grid; place-items: center; align-content: center; gap: 6px; color: #17665e; cursor: pointer; font-size: 13px; font-weight: 700; }
+.upload-dropzone input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.upload-dropzone small { color: #6a8480; font-size: 11px; font-weight: 400; }
+.review-note-label, .feedback-section label { display: grid; gap: 7px; color: #445655; font-size: 12px; font-weight: 700; }
+.review-note-label { margin-top: 13px; }
+.review-note-label textarea, .feedback-section textarea { min-height: 64px; resize: vertical; padding: 9px 10px; border: 1px solid #c8d5d1; border-radius: 6px; color: var(--ink); background: #fbfdfc; outline: none; font: inherit; font-size: 13px; line-height: 1.5; }
+.review-note-label textarea:focus, .feedback-section textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgb(15 118 110 / .13); }
+.review-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+.artwork-preview, .review-artwork { margin: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: #f4f7f6; }
+.artwork-preview img { width: 100%; max-height: 300px; display: block; object-fit: contain; background: #eef2f1; }
+.artwork-preview figcaption, .review-artwork figcaption { padding: 8px 10px; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.review-empty { min-height: 132px; display: grid; place-items: center; padding: 20px; border: 1px dashed #cbd7d4; background: #f9fbfa; color: #849290; font-size: 13px; text-align: center; line-height: 1.65; }
+.review-artwork-head { display: grid; grid-template-columns: minmax(160px, 250px) minmax(0, 1fr); gap: 18px; align-items: start; margin-bottom: 18px; }
+.review-artwork img { display: block; width: 100%; max-height: 235px; object-fit: contain; background: #eef2f1; }
+.review-mode-note { color: #8a631a; font-size: 12px; line-height: 1.55; margin: 0; }
+.audit-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.review-section { padding: 15px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.review-section h3 { margin: 0 0 12px; font-size: 14px; }
+.dimension-list, .requirement-list, .issue-list, .change-list { display: grid; gap: 9px; }
+.dimension, .requirement, .issue { display: flex; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid #edf1ef; }
+.dimension:last-child, .requirement:last-child, .issue:last-child { padding-bottom: 0; border-bottom: 0; }
+.dimension { justify-content: space-between; }
+.dimension strong, .requirement strong, .issue strong, .change-item strong { color: #29423f; font-size: 13px; }
+.dimension p, .requirement p, .issue p, .change-item p { margin: 4px 0 0; color: #617471; font-size: 12px; line-height: 1.55; }
+.rating { flex: 0 0 auto; align-self: start; padding: 4px 6px; border-radius: 4px; color: #17665e; background: #e6f5f1; font-size: 12px; font-weight: 700; }
+.check-status, .severity { flex: 0 0 auto; align-self: start; padding: 4px 6px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+.check-status.pass { color: #17665e; background: #e2f4ee; }.check-status.partial { color: #925d09; background: #fff2d8; }.check-status.fail { color: #a83a2f; background: #fbe8e6; }.check-status.not_evaluable { color: #607270; background: #edf1f0; }
+.recommendation { color: #17665e !important; }.issues-section { margin-top: 15px; }.severity.high { color: #a83a2f; background: #fbe8e6; }.severity.medium { color: #925d09; background: #fff2d8; }.severity.low { color: #17665e; background: #e2f4ee; }
+.strength-row, .feedback-intent { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; color: #3d716a; font-size: 12px; }.strength-row span, .feedback-intent span { padding: 4px 6px; border-radius: 4px; background: #eff8f6; }.feedback-section { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; gap: 15px; align-items: end; margin-top: 15px; }.feedback-section .review-actions { margin: 0; }
+.revision-section { margin-top: 15px; background: #f7fbfa; border-color: #cfe5df; }.review-section-heading { display: flex; align-items: end; justify-content: space-between; gap: 12px; margin-bottom: 4px; }.review-section-heading .panel-kicker { margin-bottom: 3px; }.change-item { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; padding: 11px; border: 1px solid #dce8e4; border-radius: 5px; background: #fff; }.priority-number { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 4px; background: #17665e; color: #fff; font-size: 12px; font-weight: 700; }.review-subgroup { margin-top: 14px; }.review-subgroup h4 { margin: 0 0 6px; color: #536966; font-size: 12px; }.review-subgroup ul { margin: 0; padding-left: 17px; color: #526865; font-size: 12px; line-height: 1.7; }.review-subgroup.questions { color: #805d19; }
 @media (max-width: 620px) { .detail-grid { grid-template-columns: 1fr; } .suggestion-editor { grid-template-columns: 1fr; } }
 
 @media (max-width: 780px) {
   .merchant-detail-grid { grid-template-columns: 1fr; }
   .merchant-view-header { align-items: start; flex-direction: column; gap: 12px; }
   .input-options { align-items: start; flex-direction: column; }
+  .review-upload-layout, .review-artwork-head, .audit-grid, .feedback-section { grid-template-columns: 1fr; }
+  .review-artwork { max-width: 320px; }
+  .feedback-section .review-actions { justify-content: flex-end; }
 }

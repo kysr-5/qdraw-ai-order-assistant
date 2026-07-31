@@ -58,6 +58,28 @@ db.exec(`
     created_at TEXT NOT NULL,
     resolved_at TEXT
   );
+  CREATE TABLE IF NOT EXISTS artwork_versions (
+    id TEXT PRIMARY KEY,
+    brief_id TEXT NOT NULL REFERENCES project_briefs(id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    mime_type TEXT NOT NULL,
+    file_path TEXT NOT NULL,
+    byte_size INTEGER NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS image_reviews (
+    id TEXT PRIMARY KEY,
+    brief_id TEXT NOT NULL REFERENCES project_briefs(id) ON DELETE CASCADE,
+    artwork_id TEXT NOT NULL REFERENCES artwork_versions(id) ON DELETE CASCADE,
+    audit_json TEXT NOT NULL DEFAULT '{}',
+    audit_mode TEXT NOT NULL DEFAULT 'demo',
+    merchant_feedback TEXT NOT NULL DEFAULT '',
+    revision_json TEXT NOT NULL DEFAULT '{}',
+    revision_mode TEXT NOT NULL DEFAULT 'demo',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
 `);
 
 const now = () => new Date().toISOString();
@@ -76,6 +98,8 @@ function hydrateBrief(row) {
   };
   brief.profile_suggestions = db.prepare("SELECT * FROM profile_suggestions WHERE brief_id = ? ORDER BY created_at ASC").all(row.id).map(hydrateSuggestion);
   brief.profile_updates = db.prepare("SELECT * FROM profile_items WHERE source_brief_id = ? ORDER BY last_seen_at ASC").all(row.id).map(hydrateProfileItem);
+  brief.artworks = db.prepare("SELECT * FROM artwork_versions WHERE brief_id = ? ORDER BY created_at DESC").all(row.id).map(hydrateArtwork);
+  brief.image_reviews = db.prepare("SELECT * FROM image_reviews WHERE brief_id = ? ORDER BY created_at DESC").all(row.id).map(hydrateReview);
   return brief;
 }
 
@@ -85,6 +109,22 @@ function hydrateProfileItem(row) {
 
 function hydrateSuggestion(row) {
   return { ...row, confidence: Number(row.confidence) };
+}
+
+function hydrateArtwork(row) {
+  const { file_path, ...artwork } = row;
+  return { ...artwork, byte_size: Number(artwork.byte_size), file_url: `/api/artworks/${artwork.id}/file` };
+}
+
+function hydrateReview(row) {
+  return {
+    ...row,
+    audit: fromJson(row.audit_json, {}),
+    revision: fromJson(row.revision_json, {}),
+    audit_json: undefined,
+    revision_json: undefined,
+    artwork: getArtwork(row.artwork_id),
+  };
 }
 
 export function listMerchants() {
@@ -136,6 +176,15 @@ export function updateMerchant(id, input) {
 
 export function deleteMerchant(id) {
   return db.prepare("DELETE FROM merchants WHERE id = ?").run(id).changes > 0;
+}
+
+export function listArtworkPathsForMerchant(id) {
+  return db.prepare(`
+    SELECT a.file_path
+    FROM artwork_versions a
+    INNER JOIN project_briefs b ON b.id = a.brief_id
+    WHERE b.merchant_id = ?
+  `).all(id).map((row) => row.file_path);
 }
 
 export function createAnalyzedBrief(input) {
@@ -209,6 +258,43 @@ export function deleteBriefRawSource(id) {
   if (!brief) return null;
   db.prepare("UPDATE project_briefs SET chat_text = '', updated_at = ? WHERE id = ?").run(now(), id);
   return getBrief(id);
+}
+
+export function createArtworkVersion({ briefId, fileName, mimeType, filePath, byteSize, note = "" }) {
+  const brief = getBrief(briefId);
+  if (!brief) return null;
+  const id = randomUUID();
+  const createdAt = now();
+  db.prepare(`INSERT INTO artwork_versions (id, brief_id, file_name, mime_type, file_path, byte_size, note, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, briefId, fileName, mimeType, filePath, byteSize, note.trim(), createdAt);
+  return getArtwork(id);
+}
+
+export function getArtwork(id, includePath = false) {
+  const row = db.prepare("SELECT * FROM artwork_versions WHERE id = ?").get(id);
+  if (!row) return null;
+  return includePath ? row : hydrateArtwork(row);
+}
+
+export function createImageReview({ briefId, artworkId, audit, auditMode, revision, revisionMode }) {
+  const id = randomUUID();
+  const timestamp = now();
+  db.prepare(`INSERT INTO image_reviews (id, brief_id, artwork_id, audit_json, audit_mode, revision_json, revision_mode, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, briefId, artworkId, JSON.stringify(audit), auditMode, JSON.stringify(revision), revisionMode, timestamp, timestamp);
+  return getImageReview(id);
+}
+
+export function getImageReview(id) {
+  const row = db.prepare("SELECT * FROM image_reviews WHERE id = ?").get(id);
+  return row ? hydrateReview(row) : null;
+}
+
+export function updateImageReviewFeedback(id, { merchantFeedback, revision, revisionMode }) {
+  const current = getImageReview(id);
+  if (!current) return null;
+  db.prepare(`UPDATE image_reviews SET merchant_feedback = ?, revision_json = ?, revision_mode = ?, updated_at = ? WHERE id = ?`)
+    .run(merchantFeedback.trim(), JSON.stringify(revision), revisionMode, now(), id);
+  return getImageReview(id);
 }
 
 export function getAnalysisContext(merchantId) {
