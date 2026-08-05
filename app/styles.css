@@ -68,9 +68,15 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
 .task-rail-head { display: flex; align-items: end; justify-content: space-between; gap: 16px; padding-bottom: 13px; border-bottom: 1px solid var(--line); }
 .task-rail-head h2 { font-size: 16px; }
 .stage-track { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
-.stage-pill { min-height: 26px; display: inline-flex; align-items: center; padding: 0 9px; border-radius: 4px; color: #6a7d79; background: #eef2f1; font-size: 12px; font-weight: 700; }
+.stage-pill { min-height: 26px; display: inline-flex; align-items: center; padding: 0 9px; border: 0; border-radius: 4px; color: #6a7d79; background: #eef2f1; font-size: 12px; font-weight: 700; }
 .stage-pill.done { color: #17665e; background: #e0f2ef; }
 .stage-pill.current { color: #8a631a; background: #fff3d8; }
+.stage-pill:hover { color: #254c48; background: #dde9e6; }
+.task-rail-actions { padding-top: 12px; }
+.next-action { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; border: 1px solid #cfe2de; border-radius: 6px; background: #f7fbfa; }
+.next-action strong { display: block; margin-top: 2px; color: #1f3b38; font-size: 15px; }
+.next-action p { max-width: 760px; margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.next-label { color: #17665e; font-size: 11px; font-weight: 800; }
 .task-rail-content { padding-top: 12px; }
 .task-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 9px; }
 .task-card { min-width: 0; display: grid; gap: 5px; padding: 11px; border: 1px solid #d6e1de; border-radius: 6px; background: #fbfdfc; color: var(--ink); text-align: left; }
@@ -169,6 +175,7 @@ h2 { font-size: 17px; margin-bottom: 0; letter-spacing: 0; }
   .topbar-actions button { flex: 1; }
   .task-rail-head { align-items: start; flex-direction: column; }
   .stage-track { justify-content: flex-start; }
+  .next-action { align-items: stretch; flex-direction: column; }
   .task-list { grid-template-columns: 1fr; }
   .task-empty { align-items: stretch; flex-direction: column; }
   .workspace-grid { grid-template-columns: 1fr; gap: 12px; }

@@ -2,7 +2,7 @@ const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "w
 
 const elements = {
   merchantList: document.querySelector("#merchantList"), merchantTitle: document.querySelector("#merchantTitle"), workspace: document.querySelector("#workspace"), emptyState: document.querySelector("#emptyState"), merchantView: document.querySelector("#merchantView"), merchantViewTitle: document.querySelector("#merchantViewTitle"),
-  taskRail: document.querySelector("#taskRail"), taskRailTitle: document.querySelector("#taskRailTitle"), taskRailStages: document.querySelector("#taskRailStages"), taskRailContent: document.querySelector("#taskRailContent"),
+  taskRail: document.querySelector("#taskRail"), taskRailTitle: document.querySelector("#taskRailTitle"), taskRailStages: document.querySelector("#taskRailStages"), taskRailActions: document.querySelector("#taskRailActions"), taskRailContent: document.querySelector("#taskRailContent"),
   chatInput: document.querySelector("#chatInput"), artistNote: document.querySelector("#artistNote"), sourceType: document.querySelector("#sourceType"), useProfile: document.querySelector("#useProfile"), chatCount: document.querySelector("#chatCount"), chatState: document.querySelector("#chatState"), inputHint: document.querySelector("#inputHint"), analyzeButton: document.querySelector("#analyzeButton"),
   analysisState: document.querySelector("#analysisState"), analysisContent: document.querySelector("#analysisContent"), analysisError: document.querySelector("#analysisError"), analysisErrorText: document.querySelector("#analysisErrorText"), retryButton: document.querySelector("#retryButton"),
   briefState: document.querySelector("#briefState"), profileContent: document.querySelector("#profileContent"), profileConfidence: document.querySelector("#profileConfidence"), profileSuggestion: document.querySelector("#profileSuggestion"),
@@ -45,6 +45,26 @@ function briefProgress(brief = {}) {
   ];
 }
 
+function nextActionForBrief(brief) {
+  if (!brief) return { label: "新建需求", detail: "先把本次商家沟通整理成一个可追踪任务。", action: "start-new", emphasis: true };
+  const review = (brief.image_reviews || [])[0];
+  if (brief.status !== "confirmed") return { label: "确认任务书", detail: "任务书确认后会保留在当前项目，并解锁草图和审图。", action: "scroll-brief", emphasis: true };
+  if (!(brief.sketches || []).length) return { label: "生成草图", detail: "先生成构图线稿和起稿提示词，给画师进入草图阶段。", action: "generate-sketch", emphasis: true };
+  if (!review) return { label: "上传成稿审查", detail: "把画师成稿传上来，按任务书逐项核对画面。", action: "scroll-review", emphasis: true };
+  if (!review.merchant_feedback) return { label: "填写商家反馈", detail: "把商家反馈转成画师能直接执行的修改单。", action: "scroll-review", emphasis: true };
+  return { label: "复制修改单", detail: "修改单已生成，可以交给画师继续迭代。", action: "copy-revision", emphasis: false };
+}
+
+function workflowTargetForStage(stage) {
+  return ({ brief: ".brief-panel", sketch: "#sketchPanel", review: "#reviewPanel", revision: "#reviewPanel" })[stage];
+}
+
+function scrollToWorkflowStage(stage) {
+  const selector = workflowTargetForStage(stage);
+  const target = selector ? document.querySelector(selector) : null;
+  if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 function renderTaskRail() {
   const merchant = state.activeMerchant;
   const available = state.view === "workspace" && Boolean(merchant);
@@ -52,8 +72,10 @@ function renderTaskRail() {
   if (!available) return;
   const briefs = merchant.briefs || [];
   const active = state.activeBrief;
+  const nextAction = nextActionForBrief(active);
   elements.taskRailTitle.textContent = active?.title || "还没有任务";
-  elements.taskRailStages.innerHTML = active ? briefProgress(active).map((stage) => `<span class="stage-pill${stage.done ? " done" : ""}${stage.current ? " current" : ""}">${stage.label}</span>`).join("") : "";
+  elements.taskRailStages.innerHTML = active ? briefProgress(active).map((stage) => `<button class="stage-pill${stage.done ? " done" : ""}${stage.current ? " current" : ""}" data-stage-target="${stage.key}" type="button">${stage.label}</button>`).join("") : "";
+  elements.taskRailActions.innerHTML = `<div class="next-action"><div><span class="next-label">下一步</span><strong>${escapeHtml(nextAction.label)}</strong><p>${escapeHtml(nextAction.detail)}</p></div><button class="${nextAction.emphasis ? "primary-button" : "secondary-button"}" data-task-action="${nextAction.action}" type="button">${escapeHtml(nextAction.label)}</button></div>`;
   if (!briefs.length) {
     elements.taskRailContent.innerHTML = `<div class="task-empty"><span>暂无任务记录</span><button class="small-button confirm" data-start-new-brief type="button">新建需求</button></div>`;
     return;
@@ -557,6 +579,25 @@ elements.taskRailContent.addEventListener("click", (event) => {
   if (taskButton) activateBrief(taskButton.dataset.briefId);
   if (event.target.closest("[data-start-new-brief]")) startNewBrief();
 });
+elements.taskRailActions.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-task-action]");
+  if (actionButton) handleTaskAction(actionButton.dataset.taskAction);
+});
+elements.taskRailStages.addEventListener("click", (event) => {
+  const stageButton = event.target.closest("[data-stage-target]");
+  if (stageButton) scrollToWorkflowStage(stageButton.dataset.stageTarget);
+});
+
+function handleTaskAction(action) {
+  if (action === "start-new") return startNewBrief();
+  if (action === "scroll-brief") return scrollToWorkflowStage("brief");
+  if (action === "scroll-review") return scrollToWorkflowStage("review");
+  if (action === "generate-sketch") return generateSketch();
+  if (action === "copy-revision") {
+    const review = state.activeBrief?.image_reviews?.[0];
+    if (review) copyText(revisionAsMarkdown(review), "修改单已复制");
+  }
+}
 elements.profileSuggestion.addEventListener("click", resolveSuggestion);
 elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
 elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
