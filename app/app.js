@@ -2,6 +2,7 @@ const state = { merchants: [], activeMerchant: null, activeBrief: null, view: "w
 
 const elements = {
   merchantList: document.querySelector("#merchantList"), merchantTitle: document.querySelector("#merchantTitle"), workspace: document.querySelector("#workspace"), emptyState: document.querySelector("#emptyState"), merchantView: document.querySelector("#merchantView"), merchantViewTitle: document.querySelector("#merchantViewTitle"),
+  taskRail: document.querySelector("#taskRail"), taskRailTitle: document.querySelector("#taskRailTitle"), taskRailStages: document.querySelector("#taskRailStages"), taskRailContent: document.querySelector("#taskRailContent"),
   chatInput: document.querySelector("#chatInput"), artistNote: document.querySelector("#artistNote"), sourceType: document.querySelector("#sourceType"), useProfile: document.querySelector("#useProfile"), chatCount: document.querySelector("#chatCount"), chatState: document.querySelector("#chatState"), inputHint: document.querySelector("#inputHint"), analyzeButton: document.querySelector("#analyzeButton"),
   analysisState: document.querySelector("#analysisState"), analysisContent: document.querySelector("#analysisContent"), analysisError: document.querySelector("#analysisError"), analysisErrorText: document.querySelector("#analysisErrorText"), retryButton: document.querySelector("#retryButton"),
   briefState: document.querySelector("#briefState"), profileContent: document.querySelector("#profileContent"), profileConfidence: document.querySelector("#profileConfidence"), profileSuggestion: document.querySelector("#profileSuggestion"),
@@ -32,6 +33,44 @@ function showToast(message) {
   elements.toast.classList.remove("hidden");
   clearTimeout(showToast.timer);
   showToast.timer = setTimeout(() => elements.toast.classList.add("hidden"), 2400);
+}
+
+function briefProgress(brief = {}) {
+  const review = (brief.image_reviews || [])[0];
+  return [
+    { key: "brief", label: "任务书", done: brief.status === "confirmed", current: brief.status !== "confirmed" },
+    { key: "sketch", label: "草图", done: Boolean((brief.sketches || []).length), current: brief.status === "confirmed" && !(brief.sketches || []).length },
+    { key: "review", label: "审图", done: Boolean(review), current: Boolean((brief.sketches || []).length) && !review },
+    { key: "revision", label: "修改单", done: Boolean(review?.merchant_feedback), current: Boolean(review) && !review?.merchant_feedback },
+  ];
+}
+
+function renderTaskRail() {
+  const merchant = state.activeMerchant;
+  const available = state.view === "workspace" && Boolean(merchant);
+  elements.taskRail.classList.toggle("hidden", !available);
+  if (!available) return;
+  const briefs = merchant.briefs || [];
+  const active = state.activeBrief;
+  elements.taskRailTitle.textContent = active?.title || "还没有任务";
+  elements.taskRailStages.innerHTML = active ? briefProgress(active).map((stage) => `<span class="stage-pill${stage.done ? " done" : ""}${stage.current ? " current" : ""}">${stage.label}</span>`).join("") : "";
+  if (!briefs.length) {
+    elements.taskRailContent.innerHTML = `<div class="task-empty"><span>暂无任务记录</span><button class="small-button confirm" data-start-new-brief type="button">新建需求</button></div>`;
+    return;
+  }
+  elements.taskRailContent.innerHTML = `<div class="task-list">${briefs.map((brief) => {
+    const current = brief.id === active?.id ? " active" : "";
+    const progress = briefProgress(brief);
+    const completed = progress.filter((stage) => stage.done).length;
+    const latestReview = (brief.image_reviews || [])[0];
+    const meta = [
+      brief.status === "confirmed" ? "已确认" : "草稿",
+      (brief.sketches || []).length ? "有草图" : "",
+      latestReview ? "已审图" : "",
+      latestReview?.merchant_feedback ? "有修改单" : "",
+    ].filter(Boolean).join(" · ");
+    return `<button class="task-card${current}" data-brief-id="${brief.id}" type="button"><span class="task-card-title">${escapeHtml(brief.title)}</span><span class="task-card-meta">${escapeHtml(meta)}</span><span class="task-card-progress"><i style="width:${completed / progress.length * 100}%"></i></span></button>`;
+  }).join("")}</div>`;
 }
 
 function setAnalysisStatus(text, kind = "") {
@@ -197,10 +236,11 @@ function render() {
   const hasMerchant = Boolean(state.activeMerchant);
   elements.merchantTitle.textContent = state.view === "merchants" ? "商家管理" : (state.activeMerchant?.name || "选择一个商家");
   elements.workspace.classList.toggle("hidden", state.view !== "workspace" || !hasMerchant);
+  elements.taskRail.classList.toggle("hidden", state.view !== "workspace" || !hasMerchant);
   elements.merchantView.classList.toggle("hidden", state.view !== "merchants" || !hasMerchant);
   elements.emptyState.classList.toggle("hidden", hasMerchant || state.view !== "workspace");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  if (hasMerchant) { renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderSketch(); renderReview(); }
+  if (hasMerchant) { renderTaskRail(); renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderSketch(); renderReview(); }
 }
 
 function updateChatInput() {
@@ -512,6 +552,11 @@ document.querySelector("#deleteMerchantButton").addEventListener("click", remove
 elements.merchantDetailForm.addEventListener("submit", saveMerchantDetails);
 elements.merchantForm.addEventListener("submit", (event) => { event.preventDefault(); if (event.submitter?.value === "cancel") return elements.merchantDialog.close(); createMerchant(); });
 elements.merchantList.addEventListener("click", (event) => { const button = event.target.closest("[data-merchant-id]"); if (button) selectMerchant(button.dataset.merchantId); });
+elements.taskRailContent.addEventListener("click", (event) => {
+  const taskButton = event.target.closest("[data-brief-id]");
+  if (taskButton) activateBrief(taskButton.dataset.briefId);
+  if (event.target.closest("[data-start-new-brief]")) startNewBrief();
+});
 elements.profileSuggestion.addEventListener("click", resolveSuggestion);
 elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
 elements.merchantHistory.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
