@@ -11,6 +11,7 @@ const elements = {
   briefDialog: document.querySelector("#briefDialog"), briefDialogTitle: document.querySelector("#briefDialogTitle"), briefDialogContent: document.querySelector("#briefDialogContent"), toast: document.querySelector("#toast"), backendState: document.querySelector("#backendState"), backendDot: document.querySelector("#backendDot"),
   sketchPanel: document.querySelector("#sketchPanel"), sketchContent: document.querySelector("#sketchContent"), sketchState: document.querySelector("#sketchState"),
   reviewPanel: document.querySelector("#reviewPanel"), reviewContent: document.querySelector("#reviewContent"), reviewState: document.querySelector("#reviewState"),
+  deliveryPanel: document.querySelector("#deliveryPanel"), deliveryContent: document.querySelector("#deliveryContent"), deliveryState: document.querySelector("#deliveryState"),
 };
 
 const fieldLabels = {
@@ -52,7 +53,7 @@ function nextActionForBrief(brief) {
   if (!(brief.sketches || []).length) return { label: "生成草图", detail: "先生成构图线稿和起稿提示词，给画师进入草图阶段。", action: "generate-sketch", emphasis: true };
   if (!review) return { label: "上传成稿审查", detail: "把画师成稿传上来，按任务书逐项核对画面。", action: "scroll-review", emphasis: true };
   if (!review.merchant_feedback) return { label: "填写商家反馈", detail: "把商家反馈转成画师能直接执行的修改单。", action: "scroll-review", emphasis: true };
-  return { label: "复制修改单", detail: "修改单已生成，可以交给画师继续迭代。", action: "copy-revision", emphasis: false };
+  return { label: "复制交付包", detail: "任务书、草图提示和修改单已整理好，可以交给画师继续迭代。", action: "copy-package", emphasis: false };
 }
 
 function workflowTargetForStage(stage) {
@@ -248,9 +249,74 @@ function renderReview() {
   elements.reviewContent.innerHTML = `<div class="review-artwork-head"><figure class="review-artwork"><img src="${review.artwork?.file_url || ""}" alt="${escapeHtml(review.artwork?.file_name || "成稿")}" /><figcaption>${escapeHtml(review.artwork?.file_name || "成稿")} ${review.artwork?.note ? `· ${escapeHtml(review.artwork.note)}` : ""}</figcaption></figure><div><p class="review-summary">${escapeHtml(audit.summary || "审查结果待生成")}</p><p class="review-mode-note">${review.audit_mode === "ai" ? "已由视觉模型基于图片与任务书生成。" : "当前为演示审查；配置视觉模型后可得到基于实际画面的证据。"}</p></div></div><div class="audit-grid"><section class="review-section"><h3>审美要素</h3><div class="dimension-list">${dimensions.length ? dimensions.map((item) => `<article class="dimension"><div><strong>${escapeHtml(item.name)}</strong><p>${escapeHtml(item.observation)}</p></div><span class="rating">${item.rating}/5</span></article>`).join("") : `<p class="review-empty">暂无可用观察。</p>`}</div></section><section class="review-section"><h3>任务书核对</h3><div class="requirement-list">${checks.length ? checks.map((item) => `<article class="requirement"><span class="check-status ${item.status}">${checkLabel(item.status)}</span><div><strong>${escapeHtml(item.requirement)}</strong><p>${escapeHtml(item.evidence || "暂无画面证据")}</p>${item.recommendation ? `<p class="recommendation">建议：${escapeHtml(item.recommendation)}</p>` : ""}</div></article>`).join("") : `<p class="review-empty">暂无可核对的要求。</p>`}</div></section></div><section class="review-section issues-section"><h3>问题与优先级</h3>${audit.strengths?.length ? `<div class="strength-row"><strong>画面优势</strong>${audit.strengths.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}<div class="issue-list">${issues.length ? issues.map((item) => `<article class="issue"><span class="severity ${item.severity}">${severityLabel(item.severity)}</span><div><strong>${escapeHtml(item.category)}</strong><p>${escapeHtml(item.observation)}</p><p class="recommendation">修改方向：${escapeHtml(item.recommendation || "待补充")}</p></div></article>`).join("") : `<p class="review-empty">暂无模型确认的问题。请结合商家反馈判断是否需要修改。</p>`}</div></section><section class="review-section feedback-section"><div><p class="panel-kicker">商家确认后</p><h3>反馈转修改单</h3></div><label for="merchantFeedback">商家反馈<textarea id="merchantFeedback" placeholder="例如：蛋糕再突出一点，整体希望更清新，不要调整人物表情。">${escapeHtml(review.merchant_feedback || "")}</textarea></label><div class="review-actions"><button id="generateRevisionButton" class="primary-button" type="button">生成修改单</button></div></section>${renderRevision(review.revision)}`;
 }
 
+function deliveryStatusCards(brief) {
+  const sketch = (brief.sketches || [])[0];
+  const review = (brief.image_reviews || [])[0];
+  const cards = [
+    ["任务书", "已确认", "ready"],
+    ["草图", sketch ? "已生成" : "待生成", sketch ? "ready" : "pending"],
+    ["审图", review ? "已完成" : "待上传", review ? "ready" : "pending"],
+    ["修改单", review?.merchant_feedback ? "已生成" : "待反馈", review?.merchant_feedback ? "ready" : "pending"],
+  ];
+  return cards.map(([label, status, tone]) => `<article class="delivery-status ${tone}"><span>${label}</span><strong>${status}</strong></article>`).join("");
+}
+
+function renderDelivery() {
+  const brief = state.activeBrief;
+  const available = state.view === "workspace" && brief?.status === "confirmed";
+  elements.deliveryPanel.classList.toggle("hidden", !available);
+  if (!available) return;
+  const sketch = (brief.sketches || [])[0];
+  const review = (brief.image_reviews || [])[0];
+  const readyCount = [true, Boolean(sketch), Boolean(review), Boolean(review?.merchant_feedback)].filter(Boolean).length;
+  elements.deliveryState.textContent = `${readyCount}/4 已就绪`;
+  const previewRows = [
+    ["任务书", brief.title],
+    ["草图提示", sketch ? sketchPrompt(sketch) : "等待生成草图"],
+    ["审图结论", review?.audit?.summary || "等待上传成稿审查"],
+    ["修改单", review?.revision?.summary || "等待商家反馈"],
+  ];
+  elements.deliveryContent.innerHTML = `<div class="delivery-layout"><div><div class="delivery-status-grid">${deliveryStatusCards(brief)}</div><div class="delivery-preview">${previewRows.map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || "待补充")}</p></div>`).join("")}</div><textarea id="packagePreview" class="delivery-markdown" readonly>${escapeHtml(packageAsMarkdown())}</textarea></div><div class="delivery-actions"><button id="copyPackageButton" class="primary-button" type="button">复制交付包</button><button id="downloadPackageButton" class="secondary-button" type="button">下载 Markdown</button></div></div>`;
+}
+
 function revisionAsMarkdown(review) {
   const revision = review.revision || {};
   return `# ${state.activeBrief?.title || "作画任务"} 修改单\n\n${revision.summary || ""}\n\n${(revision.must_change || []).map((item) => `${item.priority}. ${item.action}\n原因：${item.reason || ""}\n验收：${item.acceptance || ""}`).join("\n\n") || "暂无必改项"}${revision.optional_improvements?.length ? `\n\n可选优化\n${revision.optional_improvements.map((item) => `- ${item}`).join("\n")}` : ""}${revision.do_not_change?.length ? `\n\n建议保留\n${revision.do_not_change.map((item) => `- ${item}`).join("\n")}` : ""}`;
+}
+
+function packageAsMarkdown() {
+  const brief = state.activeBrief;
+  const merchant = state.activeMerchant;
+  if (!brief || !merchant) return "";
+  const task = brief.brief || {};
+  const sketch = (brief.sketches || [])[0];
+  const review = (brief.image_reviews || [])[0];
+  const audit = review?.audit || {};
+  const plan = sketch?.plan || {};
+  const fields = Object.entries(fieldLabels).filter(([key]) => key !== "title").map(([key, label]) => `### ${label}\n${task[key] || "待确认"}`).join("\n\n");
+  const sketchBlock = sketch ? `## 草图与起稿提示\n\n### 提示词\n${sketchPrompt(sketch) || "暂无"}\n\n### 构图备注\n${(plan.layout_notes || []).map((item) => `- ${item}`).join("\n") || "暂无"}\n\n### 起稿检查\n${(plan.checklist || []).map((item) => `- [ ] ${item}`).join("\n") || "暂无"}` : "## 草图与起稿提示\n\n暂未生成草图。";
+  const reviewBlock = review ? `## 成稿审查\n\n${audit.summary || "暂无审查摘要"}\n\n### 任务书核对\n${(audit.requirement_checks || []).map((item) => `- ${checkLabel(item.status)}：${item.requirement}${item.recommendation ? `。建议：${item.recommendation}` : ""}`).join("\n") || "暂无"}\n\n### 问题与优先级\n${(audit.issues || []).map((item) => `- ${severityLabel(item.severity)}｜${item.category}：${item.recommendation || item.observation || "待补充"}`).join("\n") || "暂无"}` : "## 成稿审查\n\n暂未上传成稿审查。";
+  const revisionBlock = review ? `## 修改单\n\n${revisionAsMarkdown(review).replace(/^# .+ 修改单\s*/, "").trim()}` : "## 修改单\n\n暂未生成修改单。";
+  return `# ${brief.title || task.title || "作画任务"} 项目交付包\n\n商家：${merchant.name}\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n## 任务书\n\n${fields}\n\n${sketchBlock}\n\n${reviewBlock}\n\n${revisionBlock}\n`;
+}
+
+function packageFileName() {
+  const title = state.activeBrief?.title || "qdraw-project";
+  return `${title.replace(/[\\/:*?"<>|]+/g, "-").replace(/\s+/g, "-").slice(0, 48) || "qdraw-project"}-交付包.md`;
+}
+
+function downloadPackage() {
+  const markdown = packageAsMarkdown();
+  const blob = new Blob([markdown], { type: "text/markdown;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = packageFileName();
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  showToast("Markdown 已生成");
 }
 
 function render() {
@@ -262,7 +328,12 @@ function render() {
   elements.merchantView.classList.toggle("hidden", state.view !== "merchants" || !hasMerchant);
   elements.emptyState.classList.toggle("hidden", hasMerchant || state.view !== "workspace");
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === state.view));
-  if (hasMerchant) { renderTaskRail(); renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderSketch(); renderReview(); }
+  if (!hasMerchant) {
+    elements.sketchPanel.classList.add("hidden");
+    elements.reviewPanel.classList.add("hidden");
+    elements.deliveryPanel.classList.add("hidden");
+  }
+  if (hasMerchant) { renderTaskRail(); renderAnalysis(); renderBrief(); renderProfile(); renderMerchantView(); renderSketch(); renderReview(); renderDelivery(); }
 }
 
 function updateChatInput() {
@@ -597,6 +668,7 @@ function handleTaskAction(action) {
     const review = state.activeBrief?.image_reviews?.[0];
     if (review) copyText(revisionAsMarkdown(review), "修改单已复制");
   }
+  if (action === "copy-package") copyText(packageAsMarkdown(), "交付包已复制");
 }
 elements.profileSuggestion.addEventListener("click", resolveSuggestion);
 elements.profileContent.addEventListener("click", (event) => { const button = event.target.closest("[data-brief-id]"); if (button) activateBrief(button.dataset.briefId); });
@@ -617,6 +689,10 @@ elements.sketchContent.addEventListener("click", (event) => {
     const sketch = state.activeBrief?.sketches?.[0];
     if (sketch) copyText(sketchPrompt(sketch), "草图提示词已复制");
   }
+});
+elements.deliveryContent.addEventListener("click", (event) => {
+  if (event.target.closest("#copyPackageButton")) copyText(packageAsMarkdown(), "交付包已复制");
+  if (event.target.closest("#downloadPackageButton")) downloadPackage();
 });
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
 
