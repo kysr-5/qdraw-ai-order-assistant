@@ -96,14 +96,25 @@ const fromJson = (value, fallback) => {
   try { return JSON.parse(value); } catch { return fallback; }
 };
 
+function ensureColumn(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);
+  if (!columns.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
+ensureColumn("project_briefs", "final_note", "TEXT NOT NULL DEFAULT ''");
+ensureColumn("project_briefs", "retrospective_json", "TEXT NOT NULL DEFAULT '{}'");
+ensureColumn("project_briefs", "completed_at", "TEXT");
+
 function hydrateBrief(row) {
   if (!row) return null;
   const brief = {
     ...row,
     analysis: fromJson(row.analysis_json, {}),
     brief: fromJson(row.brief_json, {}),
+    retrospective: fromJson(row.retrospective_json, {}),
     analysis_json: undefined,
     brief_json: undefined,
+    retrospective_json: undefined,
   };
   brief.profile_suggestions = db.prepare("SELECT * FROM profile_suggestions WHERE brief_id = ? ORDER BY created_at ASC").all(row.id).map(hydrateSuggestion);
   brief.profile_updates = db.prepare("SELECT * FROM profile_items WHERE source_brief_id = ? ORDER BY last_seen_at ASC").all(row.id).map(hydrateProfileItem);
@@ -279,6 +290,47 @@ export function deleteBriefRawSource(id) {
   const brief = getBrief(id);
   if (!brief) return null;
   db.prepare("UPDATE project_briefs SET chat_text = '', updated_at = ? WHERE id = ?").run(now(), id);
+  return getBrief(id);
+}
+
+function buildDeliveryRetrospective(brief, finalNote) {
+  const task = brief.brief || {};
+  const reviews = brief.image_reviews || [];
+  const feedbacks = reviews.map((review) => review.merchant_feedback).filter(Boolean);
+  const latestReview = reviews[0];
+  const latestRevision = latestReview?.revision || {};
+  const revisionReasons = [
+    ...feedbacks.map((feedback) => `商家反馈：${feedback}`),
+    ...(latestRevision.must_change || []).map((item) => item.reason || item.action).filter(Boolean),
+  ];
+  return {
+    summary: finalNote ? `最终交付说明：${finalNote}` : "项目已完成，暂无最终交付说明。",
+    final_note: finalNote,
+    revision_count: feedbacks.length || reviews.length,
+    revision_reasons: [...new Set(revisionReasons)].slice(0, 8),
+    accepted_style: [task.style, task.colors, task.composition].filter(Boolean).join("；") || "待从最终交付中补充",
+    keep_next_time: [
+      task.style ? `延续风格：${task.style}` : "",
+      task.colors ? `保留色彩方向：${task.colors}` : "",
+      ...(latestRevision.do_not_change || []),
+    ].filter(Boolean).slice(0, 6),
+    watch_next_time: [
+      task.avoid ? `继续避免：${task.avoid}` : "",
+      ...(latestRevision.questions_to_confirm || []),
+    ].filter(Boolean).slice(0, 6),
+  };
+}
+
+export function updateBriefDelivery(id, input = {}) {
+  const current = getBrief(id);
+  if (!current) return null;
+  if (current.status !== "confirmed") return null;
+  const finalNote = String(input.final_note || "").trim();
+  const retrospective = buildDeliveryRetrospective(current, finalNote);
+  const timestamp = now();
+  db.prepare(`UPDATE project_briefs SET final_note = ?, retrospective_json = ?, completed_at = ?, updated_at = ? WHERE id = ?`)
+    .run(finalNote, JSON.stringify(retrospective), finalNote ? timestamp : null, timestamp, id);
+  db.prepare("UPDATE merchants SET updated_at = ? WHERE id = ?").run(timestamp, current.merchant_id);
   return getBrief(id);
 }
 

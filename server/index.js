@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import { analyzeRequest, analysisToBrief, toStoredSuggestions } from "./analysis.js";
 import { createDemoRevision, createRevisionBrief, reviewArtwork, textConfigured, visionConfigured } from "./review.js";
 import { createSketchPlan, renderSketchSvg } from "./sketch.js";
-import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createArtworkVersion, createImageReview, createMerchant, createSketchVersion, deleteBriefRawSource, deleteMerchant, getAnalysisContext, getArtwork, getBrief, getImageReview, getMerchant, getSketch, ignoreSuggestion, listArtworkPathsForMerchant, listMerchants, seedDemoData, updateBrief, updateImageReviewFeedback, updateMerchant } from "./storage.js";
+import { acceptSuggestion, confirmBrief, createAnalyzedBrief, createArtworkVersion, createImageReview, createMerchant, createSketchVersion, deleteBriefRawSource, deleteMerchant, getAnalysisContext, getArtwork, getBrief, getImageReview, getMerchant, getSketch, ignoreSuggestion, listArtworkPathsForMerchant, listMerchants, seedDemoData, updateBrief, updateBriefDelivery, updateImageReviewFeedback, updateMerchant } from "./storage.js";
 
 const rootDirectory = dirname(dirname(fileURLToPath(import.meta.url)));
 const appDirectory = join(rootDirectory, "app");
@@ -150,6 +150,15 @@ async function handleApi(request, response, pathname) {
   }
   const briefMatch = pathname.match(/^\/api\/briefs\/([^/]+)(?:\/(confirm))?$/);
   const rawSourceMatch = pathname.match(/^\/api\/briefs\/([^/]+)\/raw-source$/);
+  const deliveryMatch = pathname.match(/^\/api\/briefs\/([^/]+)\/delivery$/);
+  if (deliveryMatch && method === "PATCH") {
+    const id = decodeURIComponent(deliveryMatch[1]);
+    const current = getBrief(id);
+    if (!current) return notFound(response);
+    if (current.status !== "confirmed") return badRequest(response, "请先确认任务书，再保存项目复盘");
+    const brief = updateBriefDelivery(id, await readJson(request));
+    return sendJson(response, 200, { brief });
+  }
   if (rawSourceMatch && method === "DELETE") {
     const brief = deleteBriefRawSource(decodeURIComponent(rawSourceMatch[1]));
     return brief ? sendJson(response, 200, { brief }) : notFound(response);

@@ -53,11 +53,12 @@ function nextActionForBrief(brief) {
   if (!(brief.sketches || []).length) return { label: "生成草图", detail: "先生成构图线稿和起稿提示词，给画师进入草图阶段。", action: "generate-sketch", emphasis: true };
   if (!review) return { label: "上传成稿审查", detail: "把画师成稿传上来，按任务书逐项核对画面。", action: "scroll-review", emphasis: true };
   if (!review.merchant_feedback) return { label: "填写商家反馈", detail: "把商家反馈转成画师能直接执行的修改单。", action: "scroll-review", emphasis: true };
+  if (!brief.final_note) return { label: "保存项目复盘", detail: "记录最终交付说明、修改次数和下次合作要点。", action: "scroll-delivery", emphasis: true };
   return { label: "复制交付包", detail: "任务书、草图提示和修改单已整理好，可以交给画师继续迭代。", action: "copy-package", emphasis: false };
 }
 
 function workflowTargetForStage(stage) {
-  return ({ brief: ".brief-panel", sketch: "#sketchPanel", review: "#reviewPanel", revision: "#reviewPanel" })[stage];
+  return ({ brief: ".brief-panel", sketch: "#sketchPanel", review: "#reviewPanel", revision: "#reviewPanel", delivery: "#deliveryPanel" })[stage];
 }
 
 function scrollToWorkflowStage(stage) {
@@ -268,15 +269,22 @@ function renderDelivery() {
   if (!available) return;
   const sketch = (brief.sketches || [])[0];
   const review = (brief.image_reviews || [])[0];
+  const retrospective = brief.retrospective || {};
   const readyCount = [true, Boolean(sketch), Boolean(review), Boolean(review?.merchant_feedback)].filter(Boolean).length;
-  elements.deliveryState.textContent = `${readyCount}/4 已就绪`;
+  elements.deliveryState.textContent = brief.final_note ? "已复盘" : `${readyCount}/4 已就绪`;
   const previewRows = [
     ["任务书", brief.title],
     ["草图提示", sketch ? sketchPrompt(sketch) : "等待生成草图"],
     ["审图结论", review?.audit?.summary || "等待上传成稿审查"],
     ["修改单", review?.revision?.summary || "等待商家反馈"],
   ];
-  elements.deliveryContent.innerHTML = `<div class="delivery-layout"><div><div class="delivery-status-grid">${deliveryStatusCards(brief)}</div><div class="delivery-preview">${previewRows.map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || "待补充")}</p></div>`).join("")}</div><textarea id="packagePreview" class="delivery-markdown" readonly>${escapeHtml(packageAsMarkdown())}</textarea></div><div class="delivery-actions"><button id="copyPackageButton" class="primary-button" type="button">复制交付包</button><button id="downloadPackageButton" class="secondary-button" type="button">下载 Markdown</button></div></div>`;
+  const retrospectiveRows = [
+    ["修改次数", `${retrospective.revision_count ?? 0} 次`],
+    ["最终满意方向", retrospective.accepted_style || "保存复盘后生成"],
+    ["下次保留", (retrospective.keep_next_time || []).join("；") || "待补充"],
+    ["下次注意", (retrospective.watch_next_time || []).join("；") || "待补充"],
+  ];
+  elements.deliveryContent.innerHTML = `<div class="delivery-layout"><div><div class="delivery-status-grid">${deliveryStatusCards(brief)}</div><div class="delivery-preview">${previewRows.map(([label, value]) => `<div><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value || "待补充")}</p></div>`).join("")}</div><section class="retrospective-panel"><div class="review-section-heading"><div><p class="panel-kicker">项目结束后</p><h3>交付复盘</h3></div>${brief.completed_at ? `<span class="profile-meta">${new Date(brief.completed_at).toLocaleString("zh-CN")}</span>` : ""}</div><label class="final-note-label" for="finalNoteInput">最终交付说明<textarea id="finalNoteInput" placeholder="例如：商家确认最终版，保留清爽配色，产品需要比人物更突出。">${escapeHtml(brief.final_note || "")}</textarea></label><div class="retrospective-grid">${retrospectiveRows.map(([label, value]) => `<article><strong>${escapeHtml(label)}</strong><p>${escapeHtml(value)}</p></article>`).join("")}</div><div class="review-actions"><button id="saveDeliveryButton" class="primary-button" type="button">保存复盘</button></div></section><textarea id="packagePreview" class="delivery-markdown" readonly>${escapeHtml(packageAsMarkdown())}</textarea></div><div class="delivery-actions"><button id="copyPackageButton" class="primary-button" type="button">复制交付包</button><button id="downloadPackageButton" class="secondary-button" type="button">下载 Markdown</button></div></div>`;
 }
 
 function revisionAsMarkdown(review) {
@@ -293,11 +301,13 @@ function packageAsMarkdown() {
   const review = (brief.image_reviews || [])[0];
   const audit = review?.audit || {};
   const plan = sketch?.plan || {};
+  const retrospective = brief.retrospective || {};
   const fields = Object.entries(fieldLabels).filter(([key]) => key !== "title").map(([key, label]) => `### ${label}\n${task[key] || "待确认"}`).join("\n\n");
   const sketchBlock = sketch ? `## 草图与起稿提示\n\n### 提示词\n${sketchPrompt(sketch) || "暂无"}\n\n### 构图备注\n${(plan.layout_notes || []).map((item) => `- ${item}`).join("\n") || "暂无"}\n\n### 起稿检查\n${(plan.checklist || []).map((item) => `- [ ] ${item}`).join("\n") || "暂无"}` : "## 草图与起稿提示\n\n暂未生成草图。";
   const reviewBlock = review ? `## 成稿审查\n\n${audit.summary || "暂无审查摘要"}\n\n### 任务书核对\n${(audit.requirement_checks || []).map((item) => `- ${checkLabel(item.status)}：${item.requirement}${item.recommendation ? `。建议：${item.recommendation}` : ""}`).join("\n") || "暂无"}\n\n### 问题与优先级\n${(audit.issues || []).map((item) => `- ${severityLabel(item.severity)}｜${item.category}：${item.recommendation || item.observation || "待补充"}`).join("\n") || "暂无"}` : "## 成稿审查\n\n暂未上传成稿审查。";
   const revisionBlock = review ? `## 修改单\n\n${revisionAsMarkdown(review).replace(/^# .+ 修改单\s*/, "").trim()}` : "## 修改单\n\n暂未生成修改单。";
-  return `# ${brief.title || task.title || "作画任务"} 项目交付包\n\n商家：${merchant.name}\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n## 任务书\n\n${fields}\n\n${sketchBlock}\n\n${reviewBlock}\n\n${revisionBlock}\n`;
+  const retrospectiveBlock = `## 项目复盘\n\n### 最终交付说明\n${brief.final_note || "暂无"}\n\n### 修改次数\n${retrospective.revision_count ?? 0} 次\n\n### 修改原因\n${(retrospective.revision_reasons || []).map((item) => `- ${item}`).join("\n") || "暂无"}\n\n### 下次合作保留\n${(retrospective.keep_next_time || []).map((item) => `- ${item}`).join("\n") || "暂无"}\n\n### 下次合作注意\n${(retrospective.watch_next_time || []).map((item) => `- ${item}`).join("\n") || "暂无"}`;
+  return `# ${brief.title || task.title || "作画任务"} 项目交付包\n\n商家：${merchant.name}\n导出时间：${new Date().toLocaleString("zh-CN")}\n\n## 任务书\n\n${fields}\n\n${sketchBlock}\n\n${reviewBlock}\n\n${revisionBlock}\n\n${retrospectiveBlock}\n`;
 }
 
 function packageFileName() {
@@ -317,6 +327,24 @@ function downloadPackage() {
   link.remove();
   URL.revokeObjectURL(url);
   showToast("Markdown 已生成");
+}
+
+async function saveDeliveryReview() {
+  const brief = state.activeBrief;
+  if (!brief) return;
+  const finalNote = elements.deliveryContent.querySelector("#finalNoteInput")?.value.trim() || "";
+  const button = elements.deliveryContent.querySelector("#saveDeliveryButton");
+  if (button) { button.disabled = true; button.textContent = "保存中..."; }
+  try {
+    await api(`/api/briefs/${brief.id}/delivery`, { method: "PATCH", body: JSON.stringify({ final_note: finalNote }) });
+    await refreshMerchant();
+    selectActiveBriefFromMerchant();
+    render();
+    showToast("项目复盘已保存");
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = "保存复盘"; }
+    showToast(error.message);
+  }
 }
 
 function render() {
@@ -663,6 +691,7 @@ function handleTaskAction(action) {
   if (action === "start-new") return startNewBrief();
   if (action === "scroll-brief") return scrollToWorkflowStage("brief");
   if (action === "scroll-review") return scrollToWorkflowStage("review");
+  if (action === "scroll-delivery") return scrollToWorkflowStage("delivery");
   if (action === "generate-sketch") return generateSketch();
   if (action === "copy-revision") {
     const review = state.activeBrief?.image_reviews?.[0];
@@ -693,6 +722,7 @@ elements.sketchContent.addEventListener("click", (event) => {
 elements.deliveryContent.addEventListener("click", (event) => {
   if (event.target.closest("#copyPackageButton")) copyText(packageAsMarkdown(), "交付包已复制");
   if (event.target.closest("#downloadPackageButton")) downloadPackage();
+  if (event.target.closest("#saveDeliveryButton")) saveDeliveryReview();
 });
 document.querySelectorAll(".nav-item").forEach((button) => button.addEventListener("click", () => { state.view = button.dataset.view; render(); }));
 
